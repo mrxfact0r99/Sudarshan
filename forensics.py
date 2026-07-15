@@ -212,9 +212,35 @@ def normalize_process(rec, idx):
     path = "" if access_denied else exe_raw
 
     embedded_conns = []
-    for c in rec.get("connections", []) or []:
+def normalize_process(rec, idx):
+    raw_pid = rec.get("pid")
+    pid_valid = isinstance(raw_pid, int) or (
+        isinstance(raw_pid, str) and raw_pid.strip().lstrip("-").isdigit()
+    )
+    pid = str(raw_pid) if pid_valid else f"IDX-{idx}"
+
+    raw_ppid = rec.get("ppid")
+    ppid = str(raw_ppid) if isinstance(raw_ppid, int) else str(
+        first_present(rec, ["ppid", "PPID", "parent_pid"], "?"))
+
+    exe_raw = first_present(rec, ["exe", "path", "ExecutablePath"], "")
+    access_denied = exe_raw == "Access Denied"
+    path = "" if access_denied else exe_raw
+
+    embedded_conns = []
+
+    connections = rec.get("connections", [])
+
+    if isinstance(connections, str):
+        connections = []
+
+    for c in connections:
+        if not isinstance(c, dict):
+            continue
+
         laddr = c.get("laddr") or []
         raddr = c.get("raddr") or []
+
         embedded_conns.append({
             "laddr": laddr[0] if len(laddr) > 0 else "",
             "lport": str(laddr[1]) if len(laddr) > 1 else "",
@@ -237,7 +263,6 @@ def normalize_process(rec, idx):
         "embedded_conns": embedded_conns,
         "_raw": rec,
     }
-
 
 def normalize_connection(rec):
     local_ip, local_port = "", ""

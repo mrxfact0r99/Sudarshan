@@ -42,7 +42,7 @@ def show_menu():
 
 while True:
     show_menu()
-    choice = input("Select an option: ").strip()
+    choice = input("Select an option OR 99: ").strip()
 
     if choice == "0":
         print("Exiting Sudarshan.")
@@ -59,9 +59,19 @@ while True:
         print("Going For USB Events.....")
         subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
         print("Done")   
+    elif choice == "7":
+        print("Going For Reporting.....")
+        subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
+        print("Done")
+    elif choice == "99":
+        subprocess.run([sys.executable, str(Path(__file__).parent / "processes.py")])
+        subprocess.run([sys.executable, str(Path(__file__).parent / "networks.py")])
+        subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
+        print("Going For Reporting.....")
+        subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
+        print("Done")        
 
     if choice.isdigit() and 1 <= int(choice) <= len(MENU):
-        print(f"\n{MENU[int(choice)-1]} is a placeholder for now.\n")
         input("Press Enter to return to the menu...")
     else:
         print("Invalid choice.")
