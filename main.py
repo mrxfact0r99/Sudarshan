@@ -46,41 +46,41 @@ while True:
     choice = input("Select an option: ").strip()
 
     if choice == "0":
-        print("Exiting Sudarshan.")
+        print("\nExiting Sudarshan.....\n")
         break
     elif choice == "1":
-        print("Going For Processes.....")
+        print("\nGoing For Processes.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "processes.py")])
-        print("Done")
+        print("\nDone\n")
     elif choice == "2":
-        print("Going For Networks.....")
+        print("\nGoing For Networks.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "networks.py")])
-        print("Done")        
+        print("\nDone\n")        
     elif choice == "3":
-        print("Going For USB Events.....")
+        print("\nGoing For USB Events.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
-        print("Done")
+        print("\nDone\n")
     elif choice == "4":
-        print("Going For Browser Events.....")
+        print("\nGoing For Browser Events.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "history.py")])
-        print("Done") 
+        print("\nDone\n") 
     elif choice == "5":
-        print("Going For Logs Events.....")
+        print("\nGoing For Logs Events.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")])
-        print("Done")      
-    elif choice == "7":
-        print("Going For Reporting.....")
+        print("\nDone\n")      
+    elif choice == "6":
+        print("\nGoing For Reporting.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
-        print("Done")
+        print("\nDone\n")
     elif choice == "99":
         subprocess.run([sys.executable, str(Path(__file__).parent / "processes.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "networks.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "history.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")])        
-        print("Going For Reporting.....")
+        print("\nGoing For Reporting.....")
         subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
-        print("Done")        
+        print("\nDone")        
 
     if choice.isdigit() and 1 <= int(choice) <= len(MENU):
         input("Press Enter to return to the menu...")

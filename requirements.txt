@@ -1,4 +1,15 @@
+psutil
 reportlab
+python-dateutil
+pytz
+orjson
+SQLAlchemy
+py-cpuinfo
+distro
+netifaces
+scapy
+wmi
+matplotlib
 selenium
 numpy
 pandas
