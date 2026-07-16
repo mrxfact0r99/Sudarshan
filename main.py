@@ -84,5 +84,7 @@ while True:
 
     if choice.isdigit() and 1 <= int(choice) <= len(MENU):
         input("Press Enter to return to the menu...")
+    elif choice == "99":
+        pass
     else:
         print("Invalid choice.")
