@@ -8,9 +8,9 @@ MENU = [
     "Capture Network Connections",
     "Gather USB & Login Events",
     "Acquire Browser Artifacts",
-    "Capture Memory Snapshot Info",
-    "Run Full Triage Collection",
+    "Collect System Logs",
     "Generate PDF Investigation Report",
+    
 ]
 
 BANNER = r"""
@@ -37,12 +37,13 @@ def show_menu():
     print("=" * 60)
     for i, item in enumerate(MENU, start=1):
         print(f"[{i}] {item}")
+    print("[99] Run Full Triage Collection")
     print("[0] Exit")
     print("=" * 60)
 
 while True:
     show_menu()
-    choice = input("Select an option OR 99: ").strip()
+    choice = input("Select an option: ").strip()
 
     if choice == "0":
         print("Exiting Sudarshan.")
@@ -58,7 +59,15 @@ while True:
     elif choice == "3":
         print("Going For USB Events.....")
         subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
-        print("Done")   
+        print("Done")
+    elif choice == "4":
+        print("Going For Browser Events.....")
+        subprocess.run([sys.executable, str(Path(__file__).parent / "history.py")])
+        print("Done") 
+    elif choice == "5":
+        print("Going For Logs Events.....")
+        subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")])
+        print("Done")      
     elif choice == "7":
         print("Going For Reporting.....")
         subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
@@ -67,6 +76,8 @@ while True:
         subprocess.run([sys.executable, str(Path(__file__).parent / "processes.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "networks.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
+        subprocess.run([sys.executable, str(Path(__file__).parent / "history.py")])
+        subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")])        
         print("Going For Reporting.....")
         subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
         print("Done")        

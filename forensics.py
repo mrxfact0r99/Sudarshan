@@ -3,7 +3,9 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import sys
+import urllib.parse
 from datetime import datetime, timezone
 
 from reportlab.lib import colors
@@ -64,6 +66,61 @@ TYPE_MAP = {"1": "TCP", "2": "UDP"}
 # Windows logon type reference (only used if login_events carry a logon_type field)
 RISKY_LOGON_TYPES = {10: "RemoteInteractive (RDP)", 3: "Network"}
 FAILED_LOGON_EVENT_IDS = {"4625"}
+
+# Windows Event Log IDs that commonly warrant closer review during triage.
+SUSPICIOUS_EVENT_IDS = {
+    "1102": ("High", "Audit log was cleared - a common anti-forensic action"),
+    "104": ("High", "Event log (System/Application) was cleared"),
+    "4720": ("Medium", "A user account was created"),
+    "4726": ("Medium", "A user account was deleted"),
+    "4732": ("Medium", "A member was added to a security-enabled local group"),
+    "4728": ("Medium", "A member was added to a security-enabled global group"),
+    "4756": ("Medium", "A member was added to a security-enabled universal group"),
+    "4698": ("Medium", "A scheduled task was created"),
+    "4699": ("Low", "A scheduled task was deleted"),
+    "7045": ("Medium", "A new service was installed"),
+    "4697": ("Medium", "A service was installed (Security log)"),
+    "4625": ("Medium", "A failed logon attempt was recorded"),
+    "4648": ("Medium", "A logon was attempted using explicit credentials"),
+    "4672": ("Low", "Special privileges were assigned to a new logon"),
+    "7040": ("Low", "A service's start type was changed"),
+    "1116": ("High", "Antivirus/Defender detected malware"),
+    "1117": ("Medium", "Antivirus/Defender took action on detected malware"),
+    "5001": ("Medium", "Antivirus/Defender real-time protection was disabled/changed"),
+}
+
+# Message/provider keywords worth flagging even without a matching event ID above.
+SUSPICIOUS_EVENT_MESSAGE_KEYWORDS = SUSPICIOUS_KEYWORDS + [
+    "windows defender", "real-time protection", "audit log was cleared",
+    "log was cleared", "shadow copy", "vssadmin", "wevtutil",
+]
+
+# Keywords in browser history (URL or page title) that commonly indicate
+# reconnaissance, evasion, or acquisition of offensive tooling. This is a
+# coarse triage heuristic, not proof of intent - plenty of legitimate research
+# (including forensics work itself) will touch some of these terms.
+SUSPICIOUS_BROWSER_KEYWORDS = [
+    "mimikatz", "metasploit", "meterpreter", "cobalt strike", "empire c2",
+    "bloodhound", "sharphound", "psexec", "netcat", "ncat",
+    "clear event log", "clear windows event log", "wevtutil cl",
+    "disable windows defender", "bypass antivirus", "bypass edr",
+    "keygen", "crack license", "warez", "torrent",
+    "how to wipe forensic", "anti-forensic", "delete usb history",
+    "delete browser history tool", "vpn no logs", "tor browser download",
+    "pastebin.com/raw", "dark web market","murder","porn"
+]
+
+SEARCH_ENGINE_QUERY_PARAMS = {
+    "google.": "q",
+    "bing.com": "q",
+    "duckduckgo.com": "q",
+    "yahoo.com": "p",
+    "search.yahoo.com": "p",
+    "baidu.com": "wd",
+    "yandex.": "text",
+    "ask.com": "q",
+    "startpage.com": "query",
+}
 
 RANK = {"High": 3, "Medium": 2, "Low": 1, "Info": 0, "Clean": -1}
 
@@ -158,6 +215,41 @@ def load_usb_login_json(path):
     )
 
 
+def load_eventlog_json(path):
+    """Shape: {..., logs: {"System": [...], "Application": [...], "Security": [...]}}.
+    Returns (meta, {channel_name: [raw_records]})."""
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    meta = {k: v for k, v in data.items() if k != "logs"}
+    logs_block = data.get("logs", {}) or {}
+    channels = {}
+    for channel, entries in logs_block.items():
+        if isinstance(entries, list):
+            channels[channel] = entries
+    return meta, channels
+
+
+def load_browser_json(path):
+    """Shape: {..., browsers: {"Chrome (Profile 1)": {source_path, history_count,
+    history: [...]}}}. Returns (meta, {browser_name: {source_path, history: [...]}})."""
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    meta = {k: v for k, v in data.items() if k != "browsers"}
+    browsers_block = data.get("browsers", {}) or {}
+    browsers = {}
+    for name, info in browsers_block.items():
+        if not isinstance(info, dict):
+            continue
+        browsers[name] = {
+            "source_path": info.get("source_path", ""),
+            "history_count": info.get("history_count", len(info.get("history", []) or [])),
+            "history": info.get("history", []) or [],
+        }
+    return meta, browsers
+
+
 def first_present(rec, keys, default=""):
     for k in keys:
         if k in rec and rec[k] not in (None, ""):
@@ -192,26 +284,46 @@ def is_private_or_reserved(addr):
         return True
 
 
+def parse_dotnet_date(raw):
+    """Parse timestamps shaped like '/Date(1784193031572)/' (ms since epoch, UTC).
+    Falls back to returning the original string unchanged if it doesn't match."""
+    if not raw:
+        return ""
+    s = str(raw)
+    m = re.match(r"^/Date\((-?\d+)\)/$", s.strip())
+    if not m:
+        return s
+    ms = int(m.group(1))
+    try:
+        dt = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    except (ValueError, OverflowError, OSError):
+        return s
+
+
+def extract_search_query(url):
+    """If the URL looks like a search-engine results page, return the decoded
+    query string; otherwise return None."""
+    if not url:
+        return None
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return None
+    host = (parsed.netloc or "").lower()
+    for domain_fragment, param in SEARCH_ENGINE_QUERY_PARAMS.items():
+        if domain_fragment in host:
+            qs = urllib.parse.parse_qs(parsed.query)
+            values = qs.get(param)
+            if values:
+                return values[0]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Normalization
 # ---------------------------------------------------------------------------
 
-def normalize_process(rec, idx):
-    raw_pid = rec.get("pid")
-    pid_valid = isinstance(raw_pid, int) or (
-        isinstance(raw_pid, str) and raw_pid.strip().lstrip("-").isdigit()
-    )
-    pid = str(raw_pid) if pid_valid else f"IDX-{idx}"
-
-    raw_ppid = rec.get("ppid")
-    ppid = str(raw_ppid) if isinstance(raw_ppid, int) else str(
-        first_present(rec, ["ppid", "PPID", "parent_pid"], "?"))
-
-    exe_raw = first_present(rec, ["exe", "path", "ExecutablePath"], "")
-    access_denied = exe_raw == "Access Denied"
-    path = "" if access_denied else exe_raw
-
-    embedded_conns = []
 def normalize_process(rec, idx):
     raw_pid = rec.get("pid")
     pid_valid = isinstance(raw_pid, int) or (
@@ -263,6 +375,7 @@ def normalize_process(rec, idx):
         "embedded_conns": embedded_conns,
         "_raw": rec,
     }
+
 
 def normalize_connection(rec):
     local_ip, local_port = "", ""
@@ -325,11 +438,40 @@ def normalize_login_event(rec, idx):
     }
 
 
+def normalize_event_log(rec, channel, idx):
+    time_raw = first_present(rec, ["TimeCreated", "time_created", "timestamp"], "")
+    return {
+        "id": f"EVT-{channel}-{idx}",
+        "channel": str(channel),
+        "event_id": str(first_present(rec, ["Id", "EventID", "event_id"], "")),
+        "level": str(first_present(rec, ["LevelDisplayName", "Level"], "")),
+        "provider": str(first_present(rec, ["ProviderName", "Provider"], "")),
+        "message": str(first_present(rec, ["Message", "message"], "")),
+        "timestamp": parse_dotnet_date(time_raw),
+        "_raw": rec,
+    }
+
+
+def normalize_browser_entry(rec, browser_name, idx):
+    return {
+        "id": f"WEB-{idx}",
+        "browser": str(browser_name),
+        "url": str(first_present(rec, ["url"], "")),
+        "title": str(first_present(rec, ["title"], "")),
+        "visit_count": first_present(rec, ["visit_count"], ""),
+        "timestamp": str(first_present(rec, ["last_visit_time_iso", "last_visit_time"], "")),
+        "_raw": rec,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
 
-def analyze(processes, connections, usb_events, usb_note, login_events, login_note):
+def analyze(processes, connections, usb_events, usb_note, login_events, login_note,
+            event_logs=None, browser_entries=None):
+    event_logs = event_logs or []
+    browser_entries = browser_entries or []
     findings = []
 
     # --- Data-quality / collection-integrity findings ---
@@ -543,6 +685,73 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": "-",
             })
 
+    # 10. Windows Event Log entries - known-risky event IDs, error/critical levels,
+    #     and keyword matches in the message text.
+    if not event_logs:
+        findings.append({
+            "severity": "Info", "target": "eventlog",
+            "category": "Collection gap - no Windows Event Log entries captured",
+            "detail": "No Windows Event Log entries were present in the evidence file.",
+            "pid": "-",
+        })
+
+    for e in event_logs:
+        matched = False
+        if e["event_id"] in SUSPICIOUS_EVENT_IDS:
+            severity, reason = SUSPICIOUS_EVENT_IDS[e["event_id"]]
+            findings.append({
+                "severity": severity, "target": "eventlog",
+                "category": f"Notable event ID {e['event_id']} ({e['channel']})",
+                "detail": f"{reason}. Provider: {e['provider']}, at {e['timestamp']}.",
+                "pid": e["id"],
+            })
+            matched = True
+
+        haystack = f"{e['provider']} {e['message']}".lower()
+        for kw in SUSPICIOUS_EVENT_MESSAGE_KEYWORDS:
+            if kw in haystack:
+                findings.append({
+                    "severity": "High", "target": "eventlog",
+                    "category": "Suspicious keyword in event log message",
+                    "detail": f"Event ID {e['event_id']} ({e['channel']}, provider "
+                              f"{e['provider']}) message matched '{kw.strip()}' at "
+                              f"{e['timestamp']}.",
+                    "pid": e["id"],
+                })
+                matched = True
+                break
+
+        if not matched and e["level"].lower() in ("error", "critical"):
+            findings.append({
+                "severity": "Low", "target": "eventlog",
+                "category": f"{e['level']} level event ({e['channel']})",
+                "detail": f"Event ID {e['event_id']} from provider {e['provider']} "
+                          f"logged at {e['level']} level at {e['timestamp']}.",
+                "pid": e["id"],
+            })
+
+    # 11. Browser history - keyword matches on URL/title.
+    if not browser_entries:
+        findings.append({
+            "severity": "Info", "target": "browser",
+            "category": "Collection gap - no browser history captured",
+            "detail": "No browser history entries were present in the evidence file.",
+            "pid": "-",
+        })
+
+    for b in browser_entries:
+        haystack = f"{b['url']} {b['title']}".lower()
+        for kw in SUSPICIOUS_BROWSER_KEYWORDS:
+            if kw in haystack:
+                findings.append({
+                    "severity": "High", "target": "browser",
+                    "category": "Suspicious browser history entry",
+                    "detail": f"{b['browser']} history matched '{kw.strip()}' - "
+                              f"\"{b['title']}\" ({b['url']}) last visited {b['timestamp']}.",
+                    "pid": b["id"],
+                })
+                break
+
     return findings
 
 
@@ -607,7 +816,16 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                   proc_path, net_path, usb_path,
                   proc_meta, net_meta, usb_meta,
                   processes, connections, usb_events, usb_note,
-                  login_events, login_note, findings):
+                  login_events, login_note, findings,
+                  eventlog_path=None, eventlog_meta=None, event_logs=None,
+                  browser_path=None, browser_meta=None, browsers=None,
+                  browser_entries=None):
+
+    eventlog_meta = eventlog_meta or {}
+    event_logs = event_logs or []
+    browser_meta = browser_meta or {}
+    browsers = browsers or {}
+    browser_entries = browser_entries or []
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("TitleBig", parent=styles["Title"], fontSize=23,
@@ -617,6 +835,8 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                                      spaceAfter=6)
     h1 = ParagraphStyle("H1", parent=styles["Heading1"], fontSize=15,
                          textColor=colors.HexColor("#1F2937"), spaceBefore=14, spaceAfter=8)
+    h2 = ParagraphStyle("H2Generic", parent=styles["Heading2"], fontSize=11,
+                         spaceBefore=6, spaceAfter=4)
     body = ParagraphStyle("Body", parent=styles["Normal"], fontSize=9.5, leading=13)
     small = ParagraphStyle("Small", parent=styles["Normal"], fontSize=8, leading=11,
                             textColor=colors.HexColor("#444444"))
@@ -637,11 +857,13 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(Spacer(1, 1.0 * inch))
     story.append(Paragraph("Digital Forensics Analysis Report", title_style))
     story.append(Spacer(1, 0.12 * inch))
-    story.append(Paragraph("Process, Network &amp; USB/Login Evidence Review", subtitle_style))
+    story.append(Paragraph("Process, Network, USB/Login, Event Log &amp; Browser History Review", subtitle_style))
     story.append(Spacer(1, 0.4 * inch))
 
-    hostname = proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname") or "Unknown"
-    os_name = proc_meta.get("detected_os") or net_meta.get("detected_os") or usb_meta.get("detected_os") or "Unknown"
+    hostname = (proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname")
+                or eventlog_meta.get("hostname") or browser_meta.get("hostname") or "Unknown")
+    os_name = (proc_meta.get("detected_os") or net_meta.get("detected_os") or usb_meta.get("detected_os")
+               or eventlog_meta.get("detected_os") or browser_meta.get("detected_os") or "Unknown")
     os_version = proc_meta.get("os_version", "")
 
     cover_data = [
@@ -654,6 +876,8 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         ["Process Export Collected:", safe(proc_meta.get("generated_at", "Unknown"))],
         ["Network Export Collected:", safe(net_meta.get("generated_at", "Unknown"))],
         ["USB/Login Export Collected:", safe(usb_meta.get("generated_at", "Unknown")) if usb_path else "Not provided"],
+        ["Event Log Export Collected:", safe(eventlog_meta.get("generated_at", "Unknown")) if eventlog_path else "Not provided"],
+        ["Browser History Export Collected:", safe(browser_meta.get("generated_at", "Unknown")) if browser_path else "Not provided"],
         ["Evidence File 1 (Processes):", os.path.basename(proc_path)],
         ["  SHA-256:", sha256_of_file(proc_path)],
         ["Evidence File 2 (Network):", os.path.basename(net_path)],
@@ -664,7 +888,17 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
             ["Evidence File 3 (USB/Login):", os.path.basename(usb_path)],
             ["  SHA-256:", sha256_of_file(usb_path)],
         ]
-    cover_table = Table(cover_data, colWidths=[2.0 * inch, 4.3 * inch])
+    if eventlog_path:
+        cover_data += [
+            ["Evidence File 4 (Event Logs):", os.path.basename(eventlog_path)],
+            ["  SHA-256:", sha256_of_file(eventlog_path)],
+        ]
+    if browser_path:
+        cover_data += [
+            ["Evidence File 5 (Browser History):", os.path.basename(browser_path)],
+            ["  SHA-256:", sha256_of_file(browser_path)],
+        ]
+    cover_table = Table(cover_data, colWidths=[2.3 * inch, 4.0 * inch])
     cover_table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
@@ -676,10 +910,11 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(Spacer(1, 0.35 * inch))
     story.append(Paragraph(
         "This report was generated by an automated triage script that parses "
-        "process, network-connection, and USB/login evidence, cross-references the "
-        "data sets, and flags indicators that commonly warrant closer manual review. "
-        "Automated flags and Risk ratings are investigative leads, not conclusions - "
-        "every finding below should be independently verified by the examiner.",
+        "process, network-connection, USB/login, Windows Event Log, and browser "
+        "history evidence, cross-references the data sets, and flags indicators "
+        "that commonly warrant closer manual review. Automated flags and Risk "
+        "ratings are investigative leads, not conclusions - every finding below "
+        "should be independently verified by the examiner.",
         small))
     story.append(PageBreak())
 
@@ -695,6 +930,8 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
          ["Total network connections parsed", str(len(connections))],
          ["Total USB events parsed", str(len(usb_events))],
          ["Total login events parsed", str(len(login_events))],
+         ["Total Windows Event Log entries parsed", str(len(event_logs))],
+         ["Total browser history entries parsed", str(len(browser_entries))],
          ["High severity findings", str(sev_counts.get("High", 0))],
          ["Medium severity findings", str(sev_counts.get("Medium", 0))],
          ["Low severity findings", str(sev_counts.get("Low", 0))],
@@ -708,6 +945,21 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         f"{sev_counts.get('High', 0)} high, {sev_counts.get('Medium', 0)} medium, "
         f"{sev_counts.get('Low', 0)} low, and {sev_counts.get('Info', 0)} informational "
         f"(data-quality) notes. Details for each are in Section 2.", body))
+
+    high_findings = [f for f in findings if f["severity"] == "High"]
+    if high_findings:
+        story.append(Spacer(1, 0.15 * inch))
+        story.append(Paragraph(
+            f"<b>{len(high_findings)} High-severity item(s) - reviewed first:</b>", body))
+        hi_rows = [["Category", "Ref.", "Detail"]]
+        for f in high_findings:
+            hi_rows.append([
+                Paragraph(safe(f["category"]), cell),
+                Paragraph(safe(f["pid"]), cell),
+                Paragraph(safe(f["detail"]), cell),
+            ])
+        story.append(make_table(hi_rows, col_widths=[1.7 * inch, 0.6 * inch, 4.5 * inch],
+                                 header_bg=colors.HexColor("#B00020")))
     story.append(PageBreak())
 
     # ---------------- Findings ----------------
@@ -785,8 +1037,7 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
             f"privileges: {ran_admin}.", body))
     story.append(Spacer(1, 0.1 * inch))
 
-    story.append(Paragraph("5.1 USB Device Events", ParagraphStyle(
-        "H2", parent=styles["Heading2"], fontSize=11, spaceBefore=6, spaceAfter=4)))
+    story.append(Paragraph("5.1 USB Device Events", h2))
     if not usb_events:
         story.append(Paragraph(
             f"No USB events recorded. {safe(usb_note) if usb_note else ''}", body))
@@ -809,8 +1060,7 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         ))
     story.append(Spacer(1, 0.15 * inch))
 
-    story.append(Paragraph("5.2 Login Events", ParagraphStyle(
-        "H2b", parent=styles["Heading2"], fontSize=11, spaceBefore=6, spaceAfter=4)))
+    story.append(Paragraph("5.2 Login Events", h2))
     if not login_events:
         story.append(Paragraph(
             f"No login events recorded. {safe(login_note) if login_note else ''}", body))
@@ -833,8 +1083,157 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         ))
     story.append(PageBreak())
 
+    # ---------------- Windows Event Log inventory ----------------
+    story.append(Paragraph("6. Windows Event Log Review", h1))
+    if eventlog_path:
+        max_per_source = eventlog_meta.get("max_events_per_source")
+        if max_per_source:
+            story.append(Paragraph(
+                f"Up to {max_per_source} events were captured per log channel at "
+                f"collection time; this is a bounded sample, not the full log.", body))
+    story.append(Spacer(1, 0.1 * inch))
+
+    if not event_logs:
+        story.append(Paragraph("No Windows Event Log entries were present in the evidence file.", body))
+    else:
+        flagged_evt_ids = {f["pid"] for f in findings if f["target"] == "eventlog" and f["pid"] not in ("-", "?")}
+        flagged_events = [e for e in event_logs if e["id"] in flagged_evt_ids]
+        other_events = [e for e in event_logs if e["id"] not in flagged_evt_ids]
+
+        story.append(Paragraph(
+            f"6.1 Flagged Events ({len(flagged_events)} of {len(event_logs)}) - shown first", h2))
+        if not flagged_events:
+            story.append(Paragraph("No individual event log entries matched an automated heuristic.", body))
+        else:
+            evt_rows = [["Risk", "Channel", "Event ID", "Level", "Provider", "Timestamp", "Message"]]
+            flagged_events_sorted = sorted(
+                flagged_events,
+                key=lambda e: RANK.get(risk_map.get(e["id"], "Clean"), -1),
+                reverse=True,
+            )
+            for e in flagged_events_sorted:
+                risk = risk_map.get(e["id"], "Clean")
+                evt_rows.append([
+                    risk_label_cell(risk, cell),
+                    Paragraph(safe(e["channel"]), cell),
+                    Paragraph(safe(e["event_id"]), cell),
+                    Paragraph(safe(e["level"]), cell),
+                    Paragraph(safe(e["provider"]), cell),
+                    Paragraph(safe(e["timestamp"]), cell),
+                    Paragraph(safe(e["message"])[:300], cell),
+                ])
+            story.append(make_table(
+                evt_rows,
+                col_widths=[0.5 * inch, 0.6 * inch, 0.5 * inch, 0.55 * inch, 1.1 * inch, 1.1 * inch, 2.05 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
+
+        story.append(Paragraph(f"6.2 All Other Parsed Events ({len(other_events)})", h2))
+        if not other_events:
+            story.append(Paragraph("No additional events to display.", body))
+        else:
+            evt_rows2 = [["Channel", "Event ID", "Level", "Provider", "Timestamp", "Message"]]
+            for e in other_events:
+                evt_rows2.append([
+                    Paragraph(safe(e["channel"]), cell),
+                    Paragraph(safe(e["event_id"]), cell),
+                    Paragraph(safe(e["level"]), cell),
+                    Paragraph(safe(e["provider"]), cell),
+                    Paragraph(safe(e["timestamp"]), cell),
+                    Paragraph(safe(e["message"])[:250], cell),
+                ])
+            story.append(make_table(
+                evt_rows2,
+                col_widths=[0.65 * inch, 0.55 * inch, 0.6 * inch, 1.2 * inch, 1.2 * inch, 2.2 * inch]
+            ))
+    story.append(PageBreak())
+
+    # ---------------- Browser history ----------------
+    story.append(Paragraph("7. Browser History Review", h1))
+    if browsers:
+        profile_lines = ", ".join(
+            f"{name} ({info.get('history_count', len(info.get('history', [])))} entries, "
+            f"source: {info.get('source_path', 'unknown')})"
+            for name, info in browsers.items()
+        )
+        story.append(Paragraph(f"Profiles captured: {safe(profile_lines)}", body))
+    story.append(Spacer(1, 0.1 * inch))
+
+    if not browser_entries:
+        story.append(Paragraph("No browser history entries were present in the evidence file.", body))
+    else:
+        search_rows_data = []
+        for b in browser_entries:
+            q = extract_search_query(b["url"])
+            if q:
+                search_rows_data.append((b, q))
+
+        story.append(Paragraph(f"7.1 Search Engine Queries ({len(search_rows_data)})", h2))
+        if not search_rows_data:
+            story.append(Paragraph("No search-engine query strings were identified in the parsed URLs.", body))
+        else:
+            search_rows = [["Browser", "Query", "Visits", "Last Visited", "URL"]]
+            for b, q in search_rows_data:
+                search_rows.append([
+                    Paragraph(safe(b["browser"]), cell),
+                    Paragraph(safe(q), cell),
+                    Paragraph(safe(b["visit_count"]), cell),
+                    Paragraph(safe(b["timestamp"]), cell),
+                    Paragraph(safe(b["url"])[:200], cell),
+                ])
+            story.append(make_table(
+                search_rows,
+                col_widths=[0.9 * inch, 1.9 * inch, 0.5 * inch, 1.1 * inch, 2.1 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
+
+        flagged_web_ids = {f["pid"] for f in findings if f["target"] == "browser" and f["pid"] not in ("-", "?")}
+        flagged_entries = [b for b in browser_entries if b["id"] in flagged_web_ids]
+        other_entries = [b for b in browser_entries if b["id"] not in flagged_web_ids]
+
+        story.append(Paragraph(f"7.2 Flagged History Entries ({len(flagged_entries)})", h2))
+        if not flagged_entries:
+            story.append(Paragraph("No individual history entries matched an automated heuristic.", body))
+        else:
+            fw_rows = [["Risk", "Browser", "Title", "URL", "Visits", "Last Visited"]]
+            for b in flagged_entries:
+                risk = risk_map.get(b["id"], "Clean")
+                fw_rows.append([
+                    risk_label_cell(risk, cell),
+                    Paragraph(safe(b["browser"]), cell),
+                    Paragraph(safe(b["title"])[:120], cell),
+                    Paragraph(safe(b["url"])[:200], cell),
+                    Paragraph(safe(b["visit_count"]), cell),
+                    Paragraph(safe(b["timestamp"]), cell),
+                ])
+            story.append(make_table(
+                fw_rows,
+                col_widths=[0.5 * inch, 0.8 * inch, 1.3 * inch, 2.1 * inch, 0.5 * inch, 1.1 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
+
+        story.append(Paragraph(
+            f"7.3 Full Browsing History ({len(other_entries)} additional entries not flagged above)", h2))
+        if not other_entries:
+            story.append(Paragraph("No additional history entries to display.", body))
+        else:
+            hist_rows = [["Browser", "Title", "URL", "Visits", "Last Visited"]]
+            for b in other_entries:
+                hist_rows.append([
+                    Paragraph(safe(b["browser"]), cell),
+                    Paragraph(safe(b["title"])[:120], cell),
+                    Paragraph(safe(b["url"])[:220], cell),
+                    Paragraph(safe(b["visit_count"]), cell),
+                    Paragraph(safe(b["timestamp"]), cell),
+                ])
+            story.append(make_table(
+                hist_rows,
+                col_widths=[0.8 * inch, 1.5 * inch, 2.6 * inch, 0.5 * inch, 1.1 * inch]
+            ))
+    story.append(PageBreak())
+
     # ---------------- Correlation view ----------------
-    story.append(Paragraph("6. Process-to-Network Correlation", h1))
+    story.append(Paragraph("8. Process-to-Network Correlation", h1))
     story.append(Paragraph(
         "Grouped directly from the network-connection export, which carries its own "
         "reliable PID and process-name fields for each connection.", body))
@@ -858,7 +1257,7 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(PageBreak())
 
     # ---------------- Methodology ----------------
-    story.append(Paragraph("7. Methodology &amp; Chain of Custody Notes", h1))
+    story.append(Paragraph("9. Methodology &amp; Chain of Custody Notes", h1))
     story.append(Paragraph(
         "<b>Evidence handling:</b> Source files were read in place (no modification) and "
         "hashed with SHA-256 at the start of this analysis; hashes are recorded on the "
@@ -875,7 +1274,19 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         "share a name.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(Paragraph(
-        "<b>Risk ratings:</b> Each row in Sections 3-5 carries a Risk label - the "
+        "<b>Event log timestamps:</b> Windows Event Log 'TimeCreated' values in the "
+        "source export are in .NET JSON date format (milliseconds since the Unix "
+        "epoch, UTC) and were converted to human-readable UTC timestamps for this "
+        "report.", body))
+    story.append(Spacer(1, 0.08 * inch))
+    story.append(Paragraph(
+        "<b>Browser history keyword matching:</b> Section 2/7 keyword flags on URLs "
+        "and page titles are a coarse triage heuristic. A match does not by itself "
+        "establish intent - legitimate research, including forensic and security work, "
+        "can also touch these terms - and absence of a match does not clear an entry.", body))
+    story.append(Spacer(1, 0.08 * inch))
+    story.append(Paragraph(
+        "<b>Risk ratings:</b> Each row in Sections 3-7 carries a Risk label - the "
         "highest severity of any Section 2 finding tied to that row, or 'Clean' if "
         "no heuristic matched. Risk labels are triage aids, not a determination of "
         "maliciousness.", body))
@@ -883,8 +1294,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(Paragraph(
         "<b>Limitations:</b> This tool does not perform memory carving, binary "
         "disassembly, digital-signature verification, or threat-intel lookups, and "
-        "cannot recover login/USB history that the source system failed to log "
-        "(e.g. due to audit policy or permission gaps at collection time).", body))
+        "cannot recover login/USB/event-log/browser history that the source system "
+        "failed to log or that fell outside the bounded per-source collection window "
+        "(e.g. due to audit policy, permission gaps, or history retention limits at "
+        "collection time).", body))
 
     def add_page_number(canvas_obj, doc_obj):
         canvas_obj.saveState()
@@ -910,6 +1323,8 @@ def main():
     proc_path = find_evidence_file(evidence_dir, ["process"])
     net_path = find_evidence_file(evidence_dir, ["network", "connection"])
     usb_path = find_evidence_file(evidence_dir, ["usb", "login"])
+    eventlog_path = find_evidence_file(evidence_dir, ["eventlog", "winlog", "windowslog", "syslog", "event_log"])
+    browser_path = find_evidence_file(evidence_dir, ["browser", "history"])
 
     if not proc_path or not net_path:
         print("ERROR: Could not find both a process export and a network export "
@@ -925,6 +1340,14 @@ def main():
         print(f"  USB/Login export: {usb_path}")
     else:
         print("  USB/Login export: not found (that section will be skipped)")
+    if eventlog_path:
+        print(f"  Event log export: {eventlog_path}")
+    else:
+        print("  Event log export: not found (that section will be skipped)")
+    if browser_path:
+        print(f"  Browser history export: {browser_path}")
+    else:
+        print("  Browser history export: not found (that section will be skipped)")
 
     case_name = input("Case Name: ").strip() or "UNSPECIFIED-CASE"
     examiner = input("Examiner name: ").strip() or "Unspecified Examiner"
@@ -937,7 +1360,18 @@ def main():
     else:
         usb_meta, raw_usb_events, usb_note, raw_login_events, login_note = {}, [], "", [], ""
 
-    hostname = proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname") or "Unknown host"
+    if eventlog_path:
+        eventlog_meta, raw_event_channels = load_eventlog_json(eventlog_path)
+    else:
+        eventlog_meta, raw_event_channels = {}, {}
+
+    if browser_path:
+        browser_meta, browsers = load_browser_json(browser_path)
+    else:
+        browser_meta, browsers = {}, {}
+
+    hostname = (proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname")
+                or eventlog_meta.get("hostname") or browser_meta.get("hostname") or "Unknown host")
     evidence_source = f"Automated live triage export collected from '{hostname}'"
 
     processes = [normalize_process(r, i) for i, r in enumerate(raw_processes)]
@@ -945,7 +1379,18 @@ def main():
     usb_events = [normalize_usb_event(r, i) for i, r in enumerate(raw_usb_events)]
     login_events = [normalize_login_event(r, i) for i, r in enumerate(raw_login_events)]
 
-    findings = analyze(processes, connections, usb_events, usb_note, login_events, login_note)
+    event_logs = []
+    for channel, entries in raw_event_channels.items():
+        event_logs.extend(normalize_event_log(r, channel, i) for i, r in enumerate(entries))
+
+    browser_entries = []
+    for browser_name, info in browsers.items():
+        browser_entries.extend(
+            normalize_browser_entry(r, browser_name, i) for i, r in enumerate(info.get("history", []))
+        )
+
+    findings = analyze(processes, connections, usb_events, usb_note, login_events, login_note,
+                        event_logs=event_logs, browser_entries=browser_entries)
 
     current_dir = os.getcwd()
 
@@ -972,6 +1417,13 @@ def main():
         login_events=login_events,
         login_note=login_note,
         findings=findings,
+        eventlog_path=eventlog_path,
+        eventlog_meta=eventlog_meta,
+        event_logs=event_logs,
+        browser_path=browser_path,
+        browser_meta=browser_meta,
+        browsers=browsers,
+        browser_entries=browser_entries,
     )
 
     print(f"\nReport written to: {output_path}")
@@ -979,6 +1431,8 @@ def main():
     print(f"Connections parsed: {len(connections)}")
     print(f"USB events parsed: {len(usb_events)}")
     print(f"Login events parsed: {len(login_events)}")
+    print(f"Event log entries parsed: {len(event_logs)}")
+    print(f"Browser history entries parsed: {len(browser_entries)}")
     print(f"Findings flagged: {len(findings)}")
 
 
