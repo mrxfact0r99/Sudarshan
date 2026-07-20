@@ -9,6 +9,7 @@ MENU = [
     "Gather USB & Login Events",
     "Acquire Browser Artifacts",
     "Collect System Logs",
+    "Gather Recycle Bin",
     "Generate PDF Investigation Report",
     
 ]
@@ -69,6 +70,10 @@ while True:
         subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")])
         print("\nDone\n")      
     elif choice == "6":
+        print("\nGoing For Recycle Bin.....\n")
+        subprocess.run([sys.executable, str(Path(__file__).parent / "recycle.py")])
+        print("\nDone\n")
+    elif choice == "7":
         print("\nGoing For Reporting.....\n")
         subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
         print("\nDone\n")
@@ -77,7 +82,8 @@ while True:
         subprocess.run([sys.executable, str(Path(__file__).parent / "networks.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "usb.py")])
         subprocess.run([sys.executable, str(Path(__file__).parent / "history.py")])
-        subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")])        
+        subprocess.run([sys.executable, str(Path(__file__).parent / "logs.py")]) 
+        subprocess.run([sys.executable, str(Path(__file__).parent / "recycle.py")])                       
         print("\nGoing For Reporting.....")
         subprocess.run([sys.executable, str(Path(__file__).parent / "forensics.py")])
         print("\nDone")        
