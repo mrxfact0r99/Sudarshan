@@ -1,6 +1,5 @@
 psutil
 reportlab
-struct
 configparser
 python-dateutil
 pytz
