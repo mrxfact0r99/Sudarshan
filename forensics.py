@@ -25,7 +25,7 @@ SUSPICIOUS_KEYWORDS = [
     "downloadstring", "downloadfile", "frombase64string",
     "certutil -urlcache", "certutil -decode", "bitsadmin",
     "rundll32.exe javascript", "regsvr32 /u /s /i:http",
-    "wmic process call create", "reverse shell",
+    "wmic process call create", "reverse shell","murder",
 ]
 
 SUSPICIOUS_PATH_FRAGMENTS = [
@@ -107,8 +107,30 @@ SUSPICIOUS_BROWSER_KEYWORDS = [
     "keygen", "crack license", "warez", "torrent",
     "how to wipe forensic", "anti-forensic", "delete usb history",
     "delete browser history tool", "vpn no logs", "tor browser download",
-    "pastebin.com/raw", "dark web market","murder","porn"
+    "pastebin.com/raw", "dark web market","murder",
 ]
+
+# Recycle Bin / deleted-file triage heuristics.
+# File extensions that are unusual/notable to see intentionally deleted.
+SUSPICIOUS_DELETED_EXTENSIONS = {
+    ".exe", ".dll", ".bat", ".cmd", ".vbs", ".vbe", ".ps1", ".psm1",
+    ".scr", ".jar", ".js", ".msi", ".sys", ".jse", ".wsf", ".hta",
+}
+# Extensions commonly associated with sensitive/valuable data - deletion of
+# these (especially if still recoverable) is worth an examiner's attention.
+SENSITIVE_DELETED_EXTENSIONS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".pst", ".ost",
+    ".kdbx", ".zip", ".rar", ".7z", ".sql", ".db", ".accdb",
+}
+# A deletion within this many hours of the evidence being collected is
+# treated as "recent" and flagged - close temporal proximity to an
+# investigation/collection event is a common anti-forensic indicator.
+RECYCLE_BIN_RECENT_HOURS_HIGH = 24
+RECYCLE_BIN_RECENT_HOURS_MEDIUM = 24 * 7
+# Number of items deleted by the same user within this many minutes of each
+# other that is treated as a possible bulk/anti-forensic wipe.
+RECYCLE_BIN_BULK_WINDOW_MINUTES = 10
+RECYCLE_BIN_BULK_MIN_COUNT = 5
 
 SEARCH_ENGINE_QUERY_PARAMS = {
     "google.": "q",
@@ -162,6 +184,103 @@ def find_evidence_file(evidence_dir, keywords):
     return candidates[0]
 
 
+def list_all_json_files(evidence_dir):
+    try:
+        entries = os.listdir(evidence_dir)
+    except OSError:
+        entries = []
+    paths = [os.path.join(evidence_dir, f) for f in entries if f.lower().endswith(".json")]
+    paths.sort(key=os.path.getmtime, reverse=True)
+    return paths
+
+
+def peek_json(path):
+    """Best-effort JSON load used only for content-based classification.
+    Returns None (rather than raising) on any parse/read failure so a bad
+    file doesn't crash evidence discovery."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def classify_evidence_content(data):
+    """Identify which evidence category a parsed JSON document looks like,
+    based on its shape rather than its filename. Returns one of
+    'eventlog', 'browser', 'usb', 'process', 'network', 'recyclebin', or None."""
+    if isinstance(data, dict):
+        keys = set(data.keys())
+        if "logs" in keys and isinstance(data.get("logs"), dict):
+            return "eventlog"
+        if "browsers" in keys and isinstance(data.get("browsers"), dict):
+            return "browser"
+        if "total_deleted_items" in keys and "items" in keys:
+            return "recyclebin"
+        if isinstance(data.get("items"), list) and data.get("items"):
+            sample = data["items"][0]
+            if isinstance(sample, dict) and (
+                "original_name" in sample or "deleted_time" in sample
+                or "index_file" in sample
+            ):
+                return "recyclebin"
+        if keys & {"usb_events", "login_events", "usbstor_history", "file_operations"}:
+            return "usb"
+        for lk in LIST_KEYS:
+            sample_list = data.get(lk)
+            if isinstance(sample_list, list) and sample_list and isinstance(sample_list[0], dict):
+                sample = sample_list[0]
+                if "pid" in sample or "cmdline" in sample or "ExecutablePath" in sample:
+                    return "process"
+                if any(k in sample for k in ("local_address", "laddr", "raddr", "remote_address")):
+                    return "network"
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        sample = data[0]
+        if "pid" in sample or "cmdline" in sample:
+            return "process"
+        if any(k in sample for k in ("local_address", "laddr", "raddr", "remote_address")):
+            return "network"
+    return None
+
+
+def resolve_evidence_files(evidence_dir):
+    """Find the five evidence files. Filename keyword matching is tried
+    first (fast, predictable); any category still missing afterwards falls
+    back to sniffing the actual JSON shape of whatever files weren't already
+    claimed, so files that don't happen to include the expected word in
+    their name still get picked up. Returns (paths_dict, unclassified_list)."""
+    paths = {
+        "process": find_evidence_file(evidence_dir, ["process"]),
+        "network": find_evidence_file(evidence_dir, ["network", "connection"]),
+        "usb": find_evidence_file(evidence_dir, ["usb", "login"]),
+        "eventlog": find_evidence_file(evidence_dir, [
+            "eventlog", "winlog", "windowslog", "syslog", "event_log",
+            "system_log", "systemlog", "winevent", "win_event", "evtx", "eventviewer",
+        ]),
+        "browser": find_evidence_file(evidence_dir, ["browser", "history"]),
+        "recyclebin": find_evidence_file(evidence_dir, [
+            "recycle", "deleted_items", "deleteditems",
+        ]),
+    }
+
+    assigned = {p for p in paths.values() if p}
+    unclassified = []
+    for path in list_all_json_files(evidence_dir):
+        if path in assigned:
+            continue
+        data = peek_json(path)
+        if data is None:
+            continue
+        kind = classify_evidence_content(data)
+        if kind and not paths.get(kind):
+            paths[kind] = path
+            assigned.add(path)
+        elif kind is None:
+            unclassified.append(path)
+
+    return paths, unclassified
+
+
 # ---------------------------------------------------------------------------
 # Loading helpers
 # ---------------------------------------------------------------------------
@@ -176,6 +295,7 @@ def sha256_of_file(path):
 
 LIST_KEYS = ("processes", "process_list", "network", "networks",
              "connections", "data", "results", "items", "records")
+
 
 
 def load_json_with_meta(path):
@@ -196,23 +316,50 @@ def load_json_with_meta(path):
     raise ValueError(f"Could not find a list of records in {path}")
 
 
+USB_LOGIN_TOP_KEYS = ("usb_events", "login_events", "usbstor_history", "file_operations")
+
+
 def load_usb_login_json(path):
-    """This file has a distinct shape: {..., usb_events: {count, events, note},
-    login_events: {count, events, note}}. Return (meta, usb_events, usb_note,
-    login_events, login_note)."""
+    """Handles both the original shape:
+      {..., usb_events: {count, events, note}, login_events: {count, events, note}}
+    and the newer, richer shape which additionally carries:
+      usbstor_history: {count, devices, note}   -- all USB storage devices ever
+                                                     connected (from the registry),
+                                                     with no timestamp.
+      file_operations: {
+        writes_creates_deletes_renames: {count, events, note, source},
+        read_write_audit: {count, events, note, source, enabled},
+      }
+    Returns a dict so new fields can be added without breaking callers that only
+    look up the keys they need.
+    """
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
-    meta = {k: v for k, v in data.items() if k not in ("usb_events", "login_events")}
+    meta = {k: v for k, v in data.items() if k not in USB_LOGIN_TOP_KEYS}
     usb_block = data.get("usb_events", {}) or {}
     login_block = data.get("login_events", {}) or {}
-    return (
-        meta,
-        usb_block.get("events", []) or [],
-        usb_block.get("note", ""),
-        login_block.get("events", []) or [],
-        login_block.get("note", ""),
-    )
+    usbstor_block = data.get("usbstor_history", {}) or {}
+    file_ops_block = data.get("file_operations", {}) or {}
+    writes_block = file_ops_block.get("writes_creates_deletes_renames", {}) or {}
+    audit_block = file_ops_block.get("read_write_audit", {}) or {}
+
+    return {
+        "meta": meta,
+        "usb_events": usb_block.get("events", []) or [],
+        "usb_note": usb_block.get("note", "") or "",
+        "login_events": login_block.get("events", []) or [],
+        "login_note": login_block.get("note", "") or "",
+        "usbstor_devices": usbstor_block.get("devices", []) or [],
+        "usbstor_note": usbstor_block.get("note", "") or "",
+        "file_write_events": writes_block.get("events", []) or [],
+        "file_write_note": writes_block.get("note", "") or "",
+        "file_write_source": writes_block.get("source", "") or "",
+        "file_audit_events": audit_block.get("events", []) or [],
+        "file_audit_note": audit_block.get("note", "") or "",
+        "file_audit_source": audit_block.get("source", "") or "",
+        "file_audit_enabled": audit_block.get("enabled", None),
+    }
 
 
 def load_eventlog_json(path):
@@ -250,11 +397,72 @@ def load_browser_json(path):
     return meta, browsers
 
 
+RECYCLE_BIN_TOP_KEYS = ("items",)
+
+
+def load_recycle_bin_json(path):
+    """Shape: {generated_at, detected_os, hostname, total_deleted_items,
+    items: [ {sid, index_file, data_file, data_file_recoverable, version,
+    file_size, deleted_time, original_name}  |  {sid, error} , ... ]}.
+
+    Some items are per-user-SID errors (e.g. 'Permission denied... Run as
+    Administrator') rather than actual deleted-file records - those are
+    split out separately so they can be reported as collection gaps instead
+    of being normalized as if they were deleted files.
+    Returns a dict: {meta, items, error_items, note}."""
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    meta = {k: v for k, v in data.items() if k not in RECYCLE_BIN_TOP_KEYS}
+    raw_items = data.get("items", []) or []
+
+    items = []
+    error_items = []
+    for rec in raw_items:
+        if not isinstance(rec, dict):
+            continue
+        if "error" in rec and "original_name" not in rec and "index_file" not in rec:
+            error_items.append(rec)
+        else:
+            items.append(rec)
+
+    return {
+        "meta": meta,
+        "items": items,
+        "error_items": error_items,
+        "note": data.get("note", "") or "",
+    }
+
+
 def first_present(rec, keys, default=""):
     for k in keys:
         if k in rec and rec[k] not in (None, ""):
             return rec[k]
     return default
+
+
+def extract_numeric_pid(raw):
+    """Return (numeric_pid_str_or_None, was_recovered_bool).
+
+    Handles plain ints/numeric strings as well as the common collection bug
+    where psutil's Process.pid was called as a *method* instead of read as a
+    property, which serializes to something like:
+      "<bound method Process.pid of <psutil.Process(pid=1234, name='x.exe') ...>>"
+    The real numeric PID is still recoverable from inside that string.
+    """
+    if isinstance(raw, int):
+        return str(raw), False
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.lstrip("-").isdigit():
+            return s, False
+        m = re.search(r"pid\s*=\s*(-?\d+)", s, re.IGNORECASE)
+        if m:
+            return m.group(1), True
+        m2 = re.search(r"(-?\d+)", s)
+        if m2:
+            return m2.group(1), True
+    return None, False
 
 
 def stringify_cmdline(raw):
@@ -326,14 +534,15 @@ def extract_search_query(url):
 
 def normalize_process(rec, idx):
     raw_pid = rec.get("pid")
-    pid_valid = isinstance(raw_pid, int) or (
-        isinstance(raw_pid, str) and raw_pid.strip().lstrip("-").isdigit()
-    )
-    pid = str(raw_pid) if pid_valid else f"IDX-{idx}"
+    pid_num, pid_recovered = extract_numeric_pid(raw_pid)
+    pid_valid = pid_num is not None
+    pid = pid_num if pid_valid else f"IDX-{idx}"
 
     raw_ppid = rec.get("ppid")
-    ppid = str(raw_ppid) if isinstance(raw_ppid, int) else str(
-        first_present(rec, ["ppid", "PPID", "parent_pid"], "?"))
+    if raw_ppid is None:
+        raw_ppid = first_present(rec, ["ppid", "PPID", "parent_pid"], None)
+    ppid_num, ppid_recovered = extract_numeric_pid(raw_ppid)
+    ppid = ppid_num if ppid_num is not None else str(raw_ppid) if raw_ppid not in (None, "") else "?"
 
     exe_raw = first_present(rec, ["exe", "path", "ExecutablePath"], "")
     access_denied = exe_raw == "Access Denied"
@@ -364,7 +573,9 @@ def normalize_process(rec, idx):
     return {
         "pid": pid,
         "pid_valid": pid_valid,
+        "pid_recovered": pid_recovered,
         "ppid": ppid,
+        "ppid_recovered": ppid_recovered,
         "name": str(first_present(rec, ["name", "Name", "process_name"], "unknown")),
         "path": path,
         "access_denied": access_denied,
@@ -425,6 +636,34 @@ def normalize_usb_event(rec, idx):
     }
 
 
+GENERIC_USB_DESCRIPTOR_MARKERS = ("vendorco", "productcode", "generic", "unknown vendor")
+
+
+def normalize_usbstor_device(rec, idx):
+    device_class = str(first_present(rec, ["device_class"], ""))
+    friendly_name = str(first_present(rec, ["friendly_name", "device_name", "name"], "Unknown device"))
+    return {
+        "id": f"USBSTOR-{idx}",
+        "device_class": device_class,
+        "friendly_name": friendly_name,
+        "serial": str(first_present(rec, ["serial_number", "serial"], "")),
+        "_raw": rec,
+    }
+
+
+def normalize_file_op_event(rec, idx, source_label):
+    return {
+        "id": f"FILEOP-{idx}",
+        "source": source_label,
+        "path": str(first_present(rec, ["path", "file_path", "target_path", "filename"], "")),
+        "operation": str(first_present(rec, ["operation", "action", "event_type", "reason"], "")),
+        "process": str(first_present(rec, ["process_name", "process", "image"], "")),
+        "user": str(first_present(rec, ["username", "user", "account"], "")),
+        "timestamp": str(first_present(rec, ["timestamp", "time", "datetime"], "")),
+        "_raw": rec,
+    }
+
+
 def normalize_login_event(rec, idx):
     return {
         "id": f"LOGIN-{idx}",
@@ -452,6 +691,42 @@ def normalize_event_log(rec, channel, idx):
     }
 
 
+def parse_recycle_bin_timestamp(raw):
+    """Recycle Bin deleted_time values are plain ISO-8601 strings (naive,
+    local/collection-host time), e.g. '2026-07-09T06:27:19.891000'. Returns
+    a naive datetime, or None if it can't be parsed."""
+    if not raw:
+        return None
+    s = str(raw).strip()
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def normalize_recycle_bin_item(rec, idx):
+    original_name = str(first_present(rec, ["original_name"], ""))
+    ext = os.path.splitext(original_name)[1].lower()
+    try:
+        file_size = int(rec.get("file_size") or 0)
+    except (TypeError, ValueError):
+        file_size = 0
+    return {
+        "id": f"RCYC-{idx}",
+        "sid": str(first_present(rec, ["sid"], "")),
+        "index_file": str(first_present(rec, ["index_file"], "")),
+        "data_file": str(first_present(rec, ["data_file"], "") or ""),
+        "data_file_recoverable": bool(rec.get("data_file_recoverable")),
+        "version": rec.get("version", ""),
+        "file_size": file_size,
+        "deleted_time_raw": str(first_present(rec, ["deleted_time"], "")),
+        "deleted_time_dt": parse_recycle_bin_timestamp(rec.get("deleted_time")),
+        "original_name": original_name,
+        "extension": ext,
+        "_raw": rec,
+    }
+
+
 def normalize_browser_entry(rec, browser_name, idx):
     return {
         "id": f"WEB-{idx}",
@@ -469,12 +744,40 @@ def normalize_browser_entry(rec, browser_name, idx):
 # ---------------------------------------------------------------------------
 
 def analyze(processes, connections, usb_events, usb_note, login_events, login_note,
-            event_logs=None, browser_entries=None):
+            event_logs=None, browser_entries=None,
+            usbstor_devices=None, usbstor_note="",
+            file_write_events=None, file_write_note="", file_write_source="",
+            file_audit_events=None, file_audit_note="", file_audit_source="",
+            file_audit_enabled=None,
+            recycle_bin_items=None, recycle_bin_error_items=None,
+            recycle_bin_note="", recycle_bin_generated_at=None):
     event_logs = event_logs or []
     browser_entries = browser_entries or []
+    usbstor_devices = usbstor_devices or []
+    file_write_events = file_write_events or []
+    file_audit_events = file_audit_events or []
+    recycle_bin_items = recycle_bin_items or []
+    recycle_bin_error_items = recycle_bin_error_items or []
     findings = []
 
     # --- Data-quality / collection-integrity findings ---
+    recovered_pid_count = sum(1 for p in processes if p.get("pid_recovered"))
+    if recovered_pid_count:
+        findings.append({
+            "severity": "Info", "target": "process",
+            "category": "Data integrity - PID recovered from malformed field",
+            "detail": (
+                f"{recovered_pid_count} of {len(processes)} process records had a "
+                f"non-numeric 'pid' field (a collection-script bug, likely calling "
+                f"psutil's Process.pid as a method instead of reading it as a "
+                f"property, e.g. '<bound method Process.pid of <psutil.Process("
+                f"pid=1234, ...)>>'). The real numeric PID was recovered from inside "
+                f"that string and is shown normally in this report; no synthetic ID "
+                f"was needed for these records."
+            ),
+            "pid": "-",
+        })
+
     invalid_pid_count = sum(1 for p in processes if not p["pid_valid"])
     if invalid_pid_count:
         findings.append({
@@ -482,11 +785,10 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             "category": "Data integrity - corrupted PID field",
             "detail": (
                 f"{invalid_pid_count} of {len(processes)} process records contain a "
-                f"non-numeric 'pid' value, indicating a bug in the collection script "
-                f"(likely calling psutil's Process.pid as a method instead of reading "
-                f"it as a property). PID-based correlation with the network export is "
-                f"unreliable for these records; process-name correlation was used "
-                f"instead, and synthetic IDs (IDX-n) were assigned for reference."
+                f"'pid' value with no recoverable number at all. PID-based "
+                f"correlation with the network export is unreliable for these "
+                f"records; process-name correlation was used instead, and synthetic "
+                f"IDs (IDX-n) were assigned for reference."
             ),
             "pid": "-",
         })
@@ -505,11 +807,93 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
         })
 
     if not usb_events:
+        detail = usb_note or "No USB device-install events were present in the evidence file."
+        if usbstor_devices:
+            detail += (f" {len(usbstor_devices)} historical USB storage device(s) were "
+                       f"recovered from the registry instead - see the USBSTOR history "
+                       f"below, though those carry no connection timestamp.")
         findings.append({
             "severity": "Info", "target": "usb",
-            "category": "Collection gap - no USB events captured",
-            "detail": usb_note or "No USB events were present in the evidence file.",
+            "category": "Collection gap - no USB install events captured",
+            "detail": detail,
             "pid": "-",
+        })
+
+    # USBSTOR registry history - every USB storage device ever connected, no timestamp.
+    if not usbstor_devices and not usb_events:
+        findings.append({
+            "severity": "Info", "target": "usb",
+            "category": "Collection gap - no USBSTOR registry history captured",
+            "detail": usbstor_note or "No USB storage device history was present in the evidence file.",
+            "pid": "-",
+        })
+    for d in usbstor_devices:
+        haystack = f"{d['device_class']} {d['friendly_name']}".lower()
+        if any(marker in haystack for marker in GENERIC_USB_DESCRIPTOR_MARKERS):
+            findings.append({
+                "severity": "Medium", "target": "usb",
+                "category": "Generic/placeholder USB storage descriptor",
+                "detail": (f"USBSTOR registry entry '{d['friendly_name']}' "
+                           f"(serial {d['serial'] or 'none recorded'}) has a generic or "
+                           f"placeholder-looking vendor/product descriptor and cannot be "
+                           f"attributed to a real manufacturer from this data alone."),
+                "pid": d["id"],
+            })
+        else:
+            findings.append({
+                "severity": "Info", "target": "usb",
+                "category": "USBSTOR registry history entry",
+                "detail": (f"USB storage device previously connected to this machine: "
+                           f"'{d['friendly_name']}' (serial {d['serial'] or 'none recorded'}). "
+                           f"No connection timestamp is available for this record - verify "
+                           f"timing against other artifacts (setupapi.dev.log, USB event "
+                           f"log, or file-system timestamps) if timing matters."),
+                "pid": d["id"],
+            })
+
+    # File operations on/around removable storage (USN Journal + Security 4663 audit).
+    if not file_write_events:
+        findings.append({
+            "severity": "Info", "target": "fileop",
+            "category": "Collection gap - no USN Journal file-operation events captured",
+            "detail": file_write_note or "No file write/create/delete/rename events were present.",
+            "pid": "-",
+        })
+    for fo in file_write_events:
+        findings.append({
+            "severity": "Medium", "target": "fileop",
+            "category": "File write/create/delete/rename (USN Journal)",
+            "detail": (f"{fo['operation'] or 'File operation'} on '{fo['path']}'"
+                       f"{' by ' + fo['process'] if fo['process'] else ''} at "
+                       f"{fo['timestamp'] or 'unknown time'} (source: {fo['source']})."),
+            "pid": fo["id"],
+        })
+
+    if file_audit_enabled is False:
+        findings.append({
+            "severity": "Info", "target": "fileop",
+            "category": "Collection gap - file read/write auditing not enabled",
+            "detail": file_audit_note or (
+                "Security event 4663 (object access) auditing is not enabled for the "
+                "monitored path(s), so file reads/writes prior to enabling it cannot "
+                "be recovered."),
+            "pid": "-",
+        })
+    elif not file_audit_events:
+        findings.append({
+            "severity": "Info", "target": "fileop",
+            "category": "No file read/write audit events captured",
+            "detail": file_audit_note or "No SACL-audited file read/write events were present.",
+            "pid": "-",
+        })
+    for fo in file_audit_events:
+        findings.append({
+            "severity": "Low", "target": "fileop",
+            "category": "Audited file read/write (Security 4663)",
+            "detail": (f"{fo['operation'] or 'File access'} on '{fo['path']}'"
+                       f"{' by ' + fo['process'] if fo['process'] else ''} at "
+                       f"{fo['timestamp'] or 'unknown time'}."),
+            "pid": fo["id"],
         })
 
     if not login_events:
@@ -752,6 +1136,133 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 })
                 break
 
+    # 12. Recycle Bin - deleted / recently-deleted file activity.
+    if not recycle_bin_items and not recycle_bin_error_items:
+        findings.append({
+            "severity": "Info", "target": "recyclebin",
+            "category": "Collection gap - no Recycle Bin data captured",
+            "detail": recycle_bin_note or "No Recycle Bin export was present in the evidence file.",
+            "pid": "-",
+        })
+
+    for e in recycle_bin_error_items:
+        findings.append({
+            "severity": "Info", "target": "recyclebin",
+            "category": "Collection gap - Recycle Bin for a user SID could not be read",
+            "detail": (f"SID {e.get('sid', 'unknown')}: {e.get('error', 'permission denied')} "
+                       f"- that user's deleted-file history is not represented in this report."),
+            "pid": "-",
+        })
+
+    # Reference time for "how recently was this deleted" - prefer the
+    # export's own generated_at timestamp (the moment evidence was
+    # collected) over wall-clock now, since the two can differ.
+    now_ref = None
+    if recycle_bin_generated_at:
+        now_ref = parse_recycle_bin_timestamp(recycle_bin_generated_at)
+    if now_ref is None:
+        now_ref = datetime.now()
+
+    # Bulk-deletion detection: many items removed by the same user within a
+    # short window is a common anti-forensic "clean up before handing over
+    # the machine" pattern.
+    by_sid_time = {}
+    for it in recycle_bin_items:
+        if it["deleted_time_dt"] is not None:
+            by_sid_time.setdefault(it["sid"], []).append(it)
+    for sid, items in by_sid_time.items():
+        items_sorted = sorted(items, key=lambda x: x["deleted_time_dt"])
+        window = []
+        for it in items_sorted:
+            window.append(it)
+            while (it["deleted_time_dt"] - window[0]["deleted_time_dt"]).total_seconds() > RECYCLE_BIN_BULK_WINDOW_MINUTES * 60:
+                window.pop(0)
+            if len(window) >= RECYCLE_BIN_BULK_MIN_COUNT:
+                findings.append({
+                    "severity": "High", "target": "recyclebin",
+                    "category": "Possible bulk deletion / anti-forensic wipe",
+                    "detail": (f"{len(window)} files were deleted by SID {sid} within a "
+                               f"{RECYCLE_BIN_BULK_WINDOW_MINUTES}-minute window "
+                               f"({window[0]['deleted_time_raw']} to {window[-1]['deleted_time_raw']}) "
+                               f"- a burst of deletions like this is a common sign of "
+                               f"deliberate evidence cleanup."),
+                    "pid": "-",
+                })
+                window = []  # avoid re-flagging every overlapping sub-window
+
+    for it in recycle_bin_items:
+        name = it["original_name"] or it["index_file"] or "(unknown file name)"
+        haystack = f"{it['original_name']} {it['index_file']}".lower()
+
+        # Recency relative to collection time.
+        age_hours = None
+        if it["deleted_time_dt"] is not None:
+            age_hours = (now_ref - it["deleted_time_dt"]).total_seconds() / 3600.0
+
+        recency_note = ""
+        recency_severity = None
+        if age_hours is not None:
+            if 0 <= age_hours <= RECYCLE_BIN_RECENT_HOURS_HIGH:
+                recency_severity = "High"
+                recency_note = f"deleted only {age_hours:.1f} hour(s) before evidence collection"
+            elif age_hours <= RECYCLE_BIN_RECENT_HOURS_MEDIUM:
+                recency_severity = "Medium"
+                recency_note = f"deleted {age_hours / 24:.1f} day(s) before evidence collection"
+            elif age_hours < 0:
+                recency_severity = "Low"
+                recency_note = "deleted_time is after the evidence collection timestamp (clock skew or tampering?)"
+
+        # Suspicious keyword / path fragment match on the original path.
+        matched_kw = next((kw for kw in SUSPICIOUS_KEYWORDS if kw in haystack), None)
+        matched_path = next((frag for frag in SUSPICIOUS_PATH_FRAGMENTS if frag in haystack), None)
+
+        if matched_kw:
+            findings.append({
+                "severity": "High", "target": "recyclebin",
+                "category": "Suspicious keyword in deleted file path",
+                "detail": (f"Deleted item '{name}' matched suspicious keyword '{matched_kw.strip()}' "
+                           f"(deleted at {it['deleted_time_raw'] or 'unknown time'})."),
+                "pid": it["id"],
+            })
+        elif matched_path:
+            findings.append({
+                "severity": "Medium", "target": "recyclebin",
+                "category": "Deleted file from a suspicious/temporary location",
+                "detail": (f"Deleted item '{name}' was located under a commonly-abused path "
+                           f"('{matched_path.strip()}') before deletion "
+                           f"(deleted at {it['deleted_time_raw'] or 'unknown time'})."),
+                "pid": it["id"],
+            })
+
+        if it["extension"] in SUSPICIOUS_DELETED_EXTENSIONS:
+            findings.append({
+                "severity": "High" if it["data_file_recoverable"] else "Medium",
+                "target": "recyclebin",
+                "category": "Deleted executable/script file",
+                "detail": (f"Deleted item '{name}' has an executable/script extension "
+                           f"('{it['extension']}'){' and is still recoverable' if it['data_file_recoverable'] else ''} "
+                           f"(deleted at {it['deleted_time_raw'] or 'unknown time'})."),
+                "pid": it["id"],
+            })
+        elif it["extension"] in SENSITIVE_DELETED_EXTENSIONS and it["data_file_recoverable"]:
+            findings.append({
+                "severity": "Medium", "target": "recyclebin",
+                "category": "Recoverable deleted document/data file",
+                "detail": (f"Deleted item '{name}' ('{it['extension']}') still has its data "
+                           f"recoverable from the Recycle Bin (deleted at "
+                           f"{it['deleted_time_raw'] or 'unknown time'}) - it can be restored "
+                           f"and reviewed in full."),
+                "pid": it["id"],
+            })
+
+        if recency_severity and not matched_kw:
+            findings.append({
+                "severity": recency_severity, "target": "recyclebin",
+                "category": "Recently deleted file",
+                "detail": f"'{name}' was {recency_note}.",
+                "pid": it["id"],
+            })
+
     return findings
 
 
@@ -819,13 +1330,26 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                   login_events, login_note, findings,
                   eventlog_path=None, eventlog_meta=None, event_logs=None,
                   browser_path=None, browser_meta=None, browsers=None,
-                  browser_entries=None):
+                  browser_entries=None,
+                  usbstor_devices=None, usbstor_note="",
+                  file_write_events=None, file_write_note="", file_write_source="",
+                  file_audit_events=None, file_audit_note="", file_audit_source="",
+                  file_audit_enabled=None,
+                  recycle_bin_path=None, recycle_bin_meta=None,
+                  recycle_bin_items=None, recycle_bin_error_items=None,
+                  recycle_bin_note=""):
 
     eventlog_meta = eventlog_meta or {}
     event_logs = event_logs or []
     browser_meta = browser_meta or {}
     browsers = browsers or {}
     browser_entries = browser_entries or []
+    usbstor_devices = usbstor_devices or []
+    file_write_events = file_write_events or []
+    file_audit_events = file_audit_events or []
+    recycle_bin_meta = recycle_bin_meta or {}
+    recycle_bin_items = recycle_bin_items or []
+    recycle_bin_error_items = recycle_bin_error_items or []
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("TitleBig", parent=styles["Title"], fontSize=23,
@@ -857,13 +1381,15 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(Spacer(1, 1.0 * inch))
     story.append(Paragraph("Digital Forensics Analysis Report", title_style))
     story.append(Spacer(1, 0.12 * inch))
-    story.append(Paragraph("Process, Network, USB/Login, Event Log &amp; Browser History Review", subtitle_style))
+    story.append(Paragraph("Process, Network, USB/Login, Event Log, Browser History &amp; Recycle Bin Review", subtitle_style))
     story.append(Spacer(1, 0.4 * inch))
 
     hostname = (proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname")
-                or eventlog_meta.get("hostname") or browser_meta.get("hostname") or "Unknown")
+                or eventlog_meta.get("hostname") or browser_meta.get("hostname")
+                or recycle_bin_meta.get("hostname") or "Unknown")
     os_name = (proc_meta.get("detected_os") or net_meta.get("detected_os") or usb_meta.get("detected_os")
-               or eventlog_meta.get("detected_os") or browser_meta.get("detected_os") or "Unknown")
+               or eventlog_meta.get("detected_os") or browser_meta.get("detected_os")
+               or recycle_bin_meta.get("detected_os") or "Unknown")
     os_version = proc_meta.get("os_version", "")
 
     cover_data = [
@@ -878,6 +1404,7 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         ["USB/Login Export Collected:", safe(usb_meta.get("generated_at", "Unknown")) if usb_path else "Not provided"],
         ["Event Log Export Collected:", safe(eventlog_meta.get("generated_at", "Unknown")) if eventlog_path else "Not provided"],
         ["Browser History Export Collected:", safe(browser_meta.get("generated_at", "Unknown")) if browser_path else "Not provided"],
+        ["Recycle Bin Export Collected:", safe(recycle_bin_meta.get("generated_at", "Unknown")) if recycle_bin_path else "Not provided"],
         ["Evidence File 1 (Processes):", os.path.basename(proc_path)],
         ["  SHA-256:", sha256_of_file(proc_path)],
         ["Evidence File 2 (Network):", os.path.basename(net_path)],
@@ -898,6 +1425,11 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
             ["Evidence File 5 (Browser History):", os.path.basename(browser_path)],
             ["  SHA-256:", sha256_of_file(browser_path)],
         ]
+    if recycle_bin_path:
+        cover_data += [
+            ["Evidence File 6 (Recycle Bin):", os.path.basename(recycle_bin_path)],
+            ["  SHA-256:", sha256_of_file(recycle_bin_path)],
+        ]
     cover_table = Table(cover_data, colWidths=[2.3 * inch, 4.0 * inch])
     cover_table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -910,9 +1442,9 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(Spacer(1, 0.35 * inch))
     story.append(Paragraph(
         "This report was generated by an automated triage script that parses "
-        "process, network-connection, USB/login, Windows Event Log, and browser "
-        "history evidence, cross-references the data sets, and flags indicators "
-        "that commonly warrant closer manual review. Automated flags and Risk "
+        "process, network-connection, USB/login, Windows Event Log, browser "
+        "history, and Recycle Bin evidence, cross-references the data sets, and "
+        "flags indicators that commonly warrant closer manual review. Automated flags and Risk "
         "ratings are investigative leads, not conclusions - every finding below "
         "should be independently verified by the examiner.",
         small))
@@ -932,6 +1464,7 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
          ["Total login events parsed", str(len(login_events))],
          ["Total Windows Event Log entries parsed", str(len(event_logs))],
          ["Total browser history entries parsed", str(len(browser_entries))],
+         ["Total Recycle Bin items parsed", str(len(recycle_bin_items))],
          ["High severity findings", str(sev_counts.get("High", 0))],
          ["Medium severity findings", str(sev_counts.get("Medium", 0))],
          ["Low severity findings", str(sev_counts.get("Low", 0))],
@@ -946,20 +1479,60 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         f"{sev_counts.get('Low', 0)} low, and {sev_counts.get('Info', 0)} informational "
         f"(data-quality) notes. Details for each are in Section 2.", body))
 
-    high_findings = [f for f in findings if f["severity"] == "High"]
-    if high_findings:
-        story.append(Spacer(1, 0.15 * inch))
-        story.append(Paragraph(
-            f"<b>{len(high_findings)} High-severity item(s) - reviewed first:</b>", body))
-        hi_rows = [["Category", "Ref.", "Detail"]]
-        for f in high_findings:
-            hi_rows.append([
-                Paragraph(safe(f["category"]), cell),
-                Paragraph(safe(f["pid"]), cell),
-                Paragraph(safe(f["detail"]), cell),
-            ])
-        story.append(make_table(hi_rows, col_widths=[1.7 * inch, 0.6 * inch, 4.5 * inch],
-                                 header_bg=colors.HexColor("#B00020")))
+    # Per-category breakdown so every evidence type gets its own visible
+    # rundown in the summary - not just whichever findings happened to be
+    # marked "High" (USB findings in particular are usually Medium/Low, and
+    # would otherwise never show up here).
+    EXEC_SUMMARY_CATEGORIES = [
+        ("browser", "Suspicious Browser Search / History Activity"),
+        ("process", "Suspicious Running Processes"),
+        ("connection", "Suspicious Network Connections"),
+        ("eventlog", "Suspicious / Notable System Event Log Entries"),
+        ("usb", "USB Device Activity Flags"),
+        ("login", "Login Activity Flags"),
+        ("fileop", "File Operation Flags (USB-related)"),
+        ("recyclebin", "Recycle Bin / Deleted &amp; Recently Deleted File Flags"),
+    ]
+    by_target = {}
+    for f in findings:
+        if f["severity"] == "Info":
+            continue
+        by_target.setdefault(f["target"], []).append(f)
+
+    story.append(Spacer(1, 0.2 * inch))
+    story.append(Paragraph("<b>Flagged Activity by Category</b>", body))
+    story.append(Paragraph(
+        "Every category below is checked and reported even when nothing was found, "
+        "so an empty section means the check ran and came back clean - not that it "
+        "was skipped.", small))
+    story.append(Spacer(1, 0.1 * inch))
+
+    for target_key, label in EXEC_SUMMARY_CATEGORIES:
+        cat_findings = sorted(by_target.get(target_key, []),
+                               key=lambda f: SEVERITY_ORDER.get(f["severity"], 9))
+        if target_key == "process":
+            cat_findings = [f for f in cat_findings if f["severity"] in ("High","Medium")]
+        elif target_key == "eventlog":
+            cat_findings = [f for f in cat_findings if f["severity"] in ("High","Medium")]
+        story.append(Paragraph(f"<b>{label}</b> ({len(cat_findings)} flagged)",
+                                ParagraphStyle("CatHdr", parent=body, spaceBefore=6, spaceAfter=3)))
+        if not cat_findings:
+            story.append(Paragraph("No suspicious activity identified in this category.", small))
+        else:
+            cat_rows = [["Sev.", "Category", "Ref.", "Detail"]]
+            for f in cat_findings:
+                cat_rows.append([
+                    Paragraph(f'<font color="{SEVERITY_COLOR[f["severity"]].hexval()}"><b>{f["severity"]}</b></font>', cell),
+                    Paragraph(safe(f["category"]), cell),
+                    Paragraph(safe(f["pid"]), cell),
+                    Paragraph(safe(f["detail"]), cell),
+                ])
+            story.append(make_table(
+                cat_rows, col_widths=[0.45 * inch, 1.5 * inch, 0.55 * inch, 4.3 * inch],
+                header_bg=colors.HexColor("#B00020") if any(f["severity"] == "High" for f in cat_findings)
+                else colors.HexColor("#1F2937"),
+            ))
+        story.append(Spacer(1, 0.12 * inch))
     story.append(PageBreak())
 
     # ---------------- Findings ----------------
@@ -1080,6 +1653,83 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         story.append(make_table(
             login_rows,
             col_widths=[0.55 * inch, 0.9 * inch, 0.6 * inch, 0.8 * inch, 1.1 * inch, 0.7 * inch, 1.25 * inch]
+        ))
+    story.append(Spacer(1, 0.15 * inch))
+
+    story.append(Paragraph("5.3 USB Storage Device History (registry - no timestamp)", h2))
+    if not usbstor_devices:
+        story.append(Paragraph(
+            f"No USBSTOR registry history recorded. {safe(usbstor_note) if usbstor_note else ''}", body))
+    else:
+        story.append(Paragraph(
+            "These are every USB storage device the registry shows as ever having been "
+            "connected to this machine. There is no timestamp on these records - treat "
+            "them as a device inventory, not a timeline.", small))
+        story.append(Spacer(1, 0.06 * inch))
+        stor_rows = [["Risk", "Friendly Name", "Device Class", "Serial Number"]]
+        for d in usbstor_devices:
+            risk = risk_map.get(d["id"], "Clean")
+            stor_rows.append([
+                risk_label_cell(risk, cell),
+                Paragraph(safe(d["friendly_name"]), cell),
+                Paragraph(safe(d["device_class"]), cell),
+                Paragraph(safe(d["serial"]), cell),
+            ])
+        story.append(make_table(
+            stor_rows,
+            col_widths=[0.55 * inch, 1.9 * inch, 2.6 * inch, 1.6 * inch]
+        ))
+    story.append(Spacer(1, 0.15 * inch))
+
+    story.append(Paragraph("5.4 File Operations (USB-relevant writes/reads)", h2))
+    story.append(Paragraph("5.4.1 Writes / Creates / Deletes / Renames (USN Journal)", ParagraphStyle(
+        "H3a", parent=styles["Heading3"], fontSize=9.5, spaceBefore=4, spaceAfter=3)))
+    if not file_write_events:
+        story.append(Paragraph(
+            f"No USN Journal file-operation events recorded. "
+            f"{safe(file_write_note) if file_write_note else ''}", body))
+    else:
+        fw_rows = [["Risk", "Operation", "Path", "Process", "Timestamp"]]
+        for fo in file_write_events:
+            risk = risk_map.get(fo["id"], "Clean")
+            fw_rows.append([
+                risk_label_cell(risk, cell),
+                Paragraph(safe(fo["operation"]), cell),
+                Paragraph(safe(fo["path"]), cell),
+                Paragraph(safe(fo["process"]), cell),
+                Paragraph(safe(fo["timestamp"]), cell),
+            ])
+        story.append(make_table(
+            fw_rows,
+            col_widths=[0.55 * inch, 0.8 * inch, 2.6 * inch, 1.1 * inch, 1.55 * inch]
+        ))
+    story.append(Spacer(1, 0.1 * inch))
+
+    story.append(Paragraph("5.4.2 Read/Write Audit (Security event 4663)", ParagraphStyle(
+        "H3b", parent=styles["Heading3"], fontSize=9.5, spaceBefore=4, spaceAfter=3)))
+    if file_audit_enabled is False:
+        story.append(Paragraph(
+            f"SACL auditing is not enabled for the monitored path(s), so file reads/writes "
+            f"prior to enabling it cannot be recovered. "
+            f"{safe(file_audit_note) if file_audit_note else ''}", body))
+    elif not file_audit_events:
+        story.append(Paragraph(
+            f"No audited read/write events recorded. "
+            f"{safe(file_audit_note) if file_audit_note else ''}", body))
+    else:
+        fa_rows = [["Risk", "Operation", "Path", "Process", "Timestamp"]]
+        for fo in file_audit_events:
+            risk = risk_map.get(fo["id"], "Clean")
+            fa_rows.append([
+                risk_label_cell(risk, cell),
+                Paragraph(safe(fo["operation"]), cell),
+                Paragraph(safe(fo["path"]), cell),
+                Paragraph(safe(fo["process"]), cell),
+                Paragraph(safe(fo["timestamp"]), cell),
+            ])
+        story.append(make_table(
+            fa_rows,
+            col_widths=[0.55 * inch, 0.8 * inch, 2.6 * inch, 1.1 * inch, 1.55 * inch]
         ))
     story.append(PageBreak())
 
@@ -1256,8 +1906,96 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     ))
     story.append(PageBreak())
 
+    # ---------------- Recycle Bin ----------------
+    story.append(Paragraph("9. Recycle Bin &amp; Deleted File Review", h1))
+    if recycle_bin_path:
+        story.append(Paragraph(
+            f"Total deleted items recorded at collection time: "
+            f"{safe(recycle_bin_meta.get('total_deleted_items', len(recycle_bin_items) + len(recycle_bin_error_items)))}. "
+            f"Detected OS: {safe(recycle_bin_meta.get('detected_os', 'Unknown'))}.", body))
+    story.append(Spacer(1, 0.1 * inch))
+
+    if not recycle_bin_path:
+        story.append(Paragraph("No Recycle Bin export was present in the evidence file.", body))
+    else:
+        if recycle_bin_error_items:
+            story.append(Paragraph("9.1 SIDs That Could Not Be Enumerated", h2))
+            story.append(Paragraph(
+                "The Recycle Bin for these user SIDs could not be read (typically a "
+                "permissions issue) - their deleted-file history is not represented "
+                "below and should be collected separately, ideally with administrator "
+                "privileges.", small))
+            story.append(Spacer(1, 0.06 * inch))
+            err_rows = [["SID", "Error"]]
+            for e in recycle_bin_error_items:
+                err_rows.append([
+                    Paragraph(safe(e.get("sid", "")), cell),
+                    Paragraph(safe(e.get("error", "")), cell),
+                ])
+            story.append(make_table(err_rows, col_widths=[3.0 * inch, 3.65 * inch]))
+            story.append(Spacer(1, 0.15 * inch))
+
+        rcyc_flagged_ids = {f["pid"] for f in findings if f["target"] == "recyclebin" and f["pid"] not in ("-", "?")}
+        rcyc_flagged = [it for it in recycle_bin_items if it["id"] in rcyc_flagged_ids]
+        rcyc_other = [it for it in recycle_bin_items if it["id"] not in rcyc_flagged_ids]
+
+        story.append(Paragraph(f"9.2 Flagged Deleted Items ({len(rcyc_flagged)} of {len(recycle_bin_items)})", h2))
+        if not rcyc_flagged:
+            story.append(Paragraph("No individual Recycle Bin items matched an automated heuristic.", body))
+        else:
+            rcyc_flagged_sorted = sorted(
+                rcyc_flagged,
+                key=lambda it: RANK.get(risk_map.get(it["id"], "Clean"), -1),
+                reverse=True,
+            )
+            rf_rows = [["Risk", "Original Path/Name", "Size", "Deleted", "Recoverable", "SID"]]
+            for it in rcyc_flagged_sorted:
+                risk = risk_map.get(it["id"], "Clean")
+                rf_rows.append([
+                    risk_label_cell(risk, cell),
+                    Paragraph(safe(it["original_name"] or it["index_file"])[:200], cell),
+                    Paragraph(safe(f"{it['file_size']:,} B"), cell),
+                    Paragraph(safe(it["deleted_time_raw"]), cell),
+                    Paragraph("Yes" if it["data_file_recoverable"] else "No", cell),
+                    Paragraph(safe(it["sid"])[:30], cell),
+                ])
+            story.append(make_table(
+                rf_rows,
+                col_widths=[0.5 * inch, 2.75 * inch, 0.7 * inch, 1.15 * inch, 0.65 * inch, 0.9 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
+
+        story.append(Paragraph(
+            f"9.3 Full Recycle Bin Inventory ({len(recycle_bin_items)} item(s) total, "
+            f"{len(rcyc_other)} not individually flagged above)", h2))
+        if not recycle_bin_items:
+            story.append(Paragraph("No deleted items to display.", body))
+        else:
+            all_rows = [["Risk", "Original Path/Name", "Size", "Deleted", "Recoverable", "SID", "Index File"]]
+            rcyc_all_sorted = sorted(
+                recycle_bin_items,
+                key=lambda it: it["deleted_time_dt"] or datetime.min,
+                reverse=True,
+            )
+            for it in rcyc_all_sorted:
+                risk = risk_map.get(it["id"], "Clean")
+                all_rows.append([
+                    risk_label_cell(risk, cell),
+                    Paragraph(safe(it["original_name"] or "(unknown)")[:180], cell),
+                    Paragraph(safe(f"{it['file_size']:,} B"), cell),
+                    Paragraph(safe(it["deleted_time_raw"]), cell),
+                    Paragraph("Yes" if it["data_file_recoverable"] else "No", cell),
+                    Paragraph(safe(it["sid"])[:22], cell),
+                    Paragraph(safe(it["index_file"])[:140], cell),
+                ])
+            story.append(make_table(
+                all_rows,
+                col_widths=[0.45 * inch, 1.85 * inch, 0.65 * inch, 1.05 * inch, 0.6 * inch, 0.85 * inch, 1.2 * inch]
+            ))
+    story.append(PageBreak())
+
     # ---------------- Methodology ----------------
-    story.append(Paragraph("9. Methodology &amp; Chain of Custody Notes", h1))
+    story.append(Paragraph("10. Methodology &amp; Chain of Custody Notes", h1))
     story.append(Paragraph(
         "<b>Evidence handling:</b> Source files were read in place (no modification) and "
         "hashed with SHA-256 at the start of this analysis; hashes are recorded on the "
@@ -1286,15 +2024,24 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         "can also touch these terms - and absence of a match does not clear an entry.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(Paragraph(
-        "<b>Risk ratings:</b> Each row in Sections 3-7 carries a Risk label - the "
-        "highest severity of any Section 2 finding tied to that row, or 'Clean' if "
-        "no heuristic matched. Risk labels are triage aids, not a determination of "
-        "maliciousness.", body))
+        "<b>Recycle Bin recency &amp; bulk-deletion heuristics:</b> Section 2/9 flags "
+        "items deleted shortly before the export's own 'generated_at' collection "
+        "timestamp, and flags bursts of deletions by the same user within a short "
+        "window, as these patterns commonly - but not exclusively - correlate with "
+        "deliberate evidence cleanup. 'Recoverable' means the Recycle Bin's data "
+        "file for that item was still present at collection time and can be "
+        "restored for full review; it does not itself indicate wrongdoing.", body))
+    story.append(Spacer(1, 0.08 * inch))
+    story.append(Paragraph(
+        "<b>Risk ratings:</b> Each row in Sections 3-7 and 9 carries a Risk label - "
+        "the highest severity of any Section 2 finding tied to that row, or 'Clean' "
+        "if no heuristic matched. Risk labels are triage aids, not a determination "
+        "of maliciousness.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(Paragraph(
         "<b>Limitations:</b> This tool does not perform memory carving, binary "
         "disassembly, digital-signature verification, or threat-intel lookups, and "
-        "cannot recover login/USB/event-log/browser history that the source system "
+        "cannot recover login/USB/event-log/browser/Recycle-Bin history that the source system "
         "failed to log or that fell outside the bounded per-source collection window "
         "(e.g. due to audit policy, permission gaps, or history retention limits at "
         "collection time).", body))
@@ -1320,17 +2067,18 @@ def main():
     evidence_dir = find_evidence_dir()
     print(f"Looking for evidence files in: {os.path.abspath(evidence_dir)}")
 
-    proc_path = find_evidence_file(evidence_dir, ["process"])
-    net_path = find_evidence_file(evidence_dir, ["network", "connection"])
-    usb_path = find_evidence_file(evidence_dir, ["usb", "login"])
-    eventlog_path = find_evidence_file(evidence_dir, ["eventlog", "winlog", "windowslog", "syslog", "event_log"])
-    browser_path = find_evidence_file(evidence_dir, ["browser", "history"])
+    paths, unclassified = resolve_evidence_files(evidence_dir)
+    proc_path = paths["process"]
+    net_path = paths["network"]
+    usb_path = paths["usb"]
+    eventlog_path = paths["eventlog"]
+    browser_path = paths["browser"]
+    recycle_bin_path = paths["recyclebin"]
 
     if not proc_path or not net_path:
         print("ERROR: Could not find both a process export and a network export "
               f"in '{evidence_dir}'. Make sure your JSON files are in an 'Evidence' "
-              "folder next to this script (or in the current directory) and that "
-              "their filenames contain 'process' and 'network'/'connection'.",
+              "folder next to this script (or in the current directory).",
               file=sys.stderr)
         sys.exit(1)
 
@@ -1348,36 +2096,96 @@ def main():
         print(f"  Browser history export: {browser_path}")
     else:
         print("  Browser history export: not found (that section will be skipped)")
+    if recycle_bin_path:
+        print(f"  Recycle Bin export: {recycle_bin_path}")
+    else:
+        print("  Recycle Bin export: not found (that section will be skipped)")
+    if unclassified:
+        print("  NOTE: found additional .json file(s) in the evidence folder that "
+              "could not be matched to any known evidence type - they are being "
+              "ignored:")
+        for u in unclassified:
+            print(f"    - {u}")
 
-    case_name = input("Case Name: ").strip() or "UNSPECIFIED-CASE"
-    examiner = input("Examiner name: ").strip() or "Unspecified Examiner"
+    case_name = "Anonymous"
+    examiner = "Anonymous"
 
     proc_meta, raw_processes = load_json_with_meta(proc_path)
     net_meta, raw_connections = load_json_with_meta(net_path)
 
     if usb_path:
-        usb_meta, raw_usb_events, usb_note, raw_login_events, login_note = load_usb_login_json(usb_path)
+        usb_data = load_usb_login_json(usb_path)
     else:
-        usb_meta, raw_usb_events, usb_note, raw_login_events, login_note = {}, [], "", [], ""
+        usb_data = {
+            "meta": {}, "usb_events": [], "usb_note": "",
+            "login_events": [], "login_note": "",
+            "usbstor_devices": [], "usbstor_note": "",
+            "file_write_events": [], "file_write_note": "", "file_write_source": "",
+            "file_audit_events": [], "file_audit_note": "", "file_audit_source": "",
+            "file_audit_enabled": None,
+        }
+    usb_meta = usb_data["meta"]
+    raw_usb_events = usb_data["usb_events"]
+    usb_note = usb_data["usb_note"]
+    raw_login_events = usb_data["login_events"]
+    login_note = usb_data["login_note"]
+    raw_usbstor_devices = usb_data["usbstor_devices"]
+    usbstor_note = usb_data["usbstor_note"]
+    raw_file_write_events = usb_data["file_write_events"]
+    file_write_note = usb_data["file_write_note"]
+    file_write_source = usb_data["file_write_source"]
+    raw_file_audit_events = usb_data["file_audit_events"]
+    file_audit_note = usb_data["file_audit_note"]
+    file_audit_source = usb_data["file_audit_source"]
+    file_audit_enabled = usb_data["file_audit_enabled"]
 
     if eventlog_path:
         eventlog_meta, raw_event_channels = load_eventlog_json(eventlog_path)
+        if raw_event_channels:
+            chan_summary = ", ".join(f"{ch}: {len(entries)}" for ch, entries in raw_event_channels.items())
+            print(f"  Event log channels found: {chan_summary}")
+        else:
+            print("  WARNING: Event log export was found and parsed, but no 'logs' "
+                  "channels were present in it (check the file's top-level 'logs' key).")
     else:
         eventlog_meta, raw_event_channels = {}, {}
 
     if browser_path:
         browser_meta, browsers = load_browser_json(browser_path)
+        if browsers:
+            prof_summary = ", ".join(f"{name}: {len(info.get('history', []))}" for name, info in browsers.items())
+            print(f"  Browser profiles found: {prof_summary}")
+        else:
+            print("  WARNING: Browser history export was found and parsed, but no "
+                  "'browsers' entries were present in it.")
     else:
         browser_meta, browsers = {}, {}
 
+    if recycle_bin_path:
+        recycle_bin_data = load_recycle_bin_json(recycle_bin_path)
+        print(f"  Recycle Bin items found: {len(recycle_bin_data['items'])} deleted item(s), "
+              f"{len(recycle_bin_data['error_items'])} unreadable SID(s)")
+    else:
+        recycle_bin_data = {"meta": {}, "items": [], "error_items": [], "note": ""}
+    recycle_bin_meta = recycle_bin_data["meta"]
+    raw_recycle_bin_items = recycle_bin_data["items"]
+    recycle_bin_error_items = recycle_bin_data["error_items"]
+    recycle_bin_note = recycle_bin_data["note"]
+
     hostname = (proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname")
-                or eventlog_meta.get("hostname") or browser_meta.get("hostname") or "Unknown host")
+                or eventlog_meta.get("hostname") or browser_meta.get("hostname")
+                or recycle_bin_meta.get("hostname") or "Unknown host")
     evidence_source = f"Automated live triage export collected from '{hostname}'"
 
     processes = [normalize_process(r, i) for i, r in enumerate(raw_processes)]
     connections = [normalize_connection(r) for r in raw_connections]
     usb_events = [normalize_usb_event(r, i) for i, r in enumerate(raw_usb_events)]
     login_events = [normalize_login_event(r, i) for i, r in enumerate(raw_login_events)]
+    usbstor_devices = [normalize_usbstor_device(r, i) for i, r in enumerate(raw_usbstor_devices)]
+    file_write_events = [normalize_file_op_event(r, i, file_write_source or "USN Journal")
+                          for i, r in enumerate(raw_file_write_events)]
+    file_audit_events = [normalize_file_op_event(r, i, file_audit_source or "Security 4663")
+                         for i, r in enumerate(raw_file_audit_events)]
 
     event_logs = []
     for channel, entries in raw_event_channels.items():
@@ -1389,8 +2197,18 @@ def main():
             normalize_browser_entry(r, browser_name, i) for i, r in enumerate(info.get("history", []))
         )
 
+    recycle_bin_items = [normalize_recycle_bin_item(r, i) for i, r in enumerate(raw_recycle_bin_items)]
+
     findings = analyze(processes, connections, usb_events, usb_note, login_events, login_note,
-                        event_logs=event_logs, browser_entries=browser_entries)
+                        event_logs=event_logs, browser_entries=browser_entries,
+                        usbstor_devices=usbstor_devices, usbstor_note=usbstor_note,
+                        file_write_events=file_write_events, file_write_note=file_write_note,
+                        file_write_source=file_write_source,
+                        file_audit_events=file_audit_events, file_audit_note=file_audit_note,
+                        file_audit_source=file_audit_source, file_audit_enabled=file_audit_enabled,
+                        recycle_bin_items=recycle_bin_items, recycle_bin_error_items=recycle_bin_error_items,
+                        recycle_bin_note=recycle_bin_note,
+                        recycle_bin_generated_at=recycle_bin_meta.get("generated_at"))
 
     current_dir = os.getcwd()
 
@@ -1424,6 +2242,20 @@ def main():
         browser_meta=browser_meta,
         browsers=browsers,
         browser_entries=browser_entries,
+        usbstor_devices=usbstor_devices,
+        usbstor_note=usbstor_note,
+        file_write_events=file_write_events,
+        file_write_note=file_write_note,
+        file_write_source=file_write_source,
+        file_audit_events=file_audit_events,
+        file_audit_note=file_audit_note,
+        file_audit_source=file_audit_source,
+        file_audit_enabled=file_audit_enabled,
+        recycle_bin_path=recycle_bin_path,
+        recycle_bin_meta=recycle_bin_meta,
+        recycle_bin_items=recycle_bin_items,
+        recycle_bin_error_items=recycle_bin_error_items,
+        recycle_bin_note=recycle_bin_note,
     )
 
     print(f"\nReport written to: {output_path}")
@@ -1431,8 +2263,12 @@ def main():
     print(f"Connections parsed: {len(connections)}")
     print(f"USB events parsed: {len(usb_events)}")
     print(f"Login events parsed: {len(login_events)}")
+    print(f"USBSTOR history devices parsed: {len(usbstor_devices)}")
+    print(f"File write/create/delete events parsed: {len(file_write_events)}")
+    print(f"File read/write audit events parsed: {len(file_audit_events)}")
     print(f"Event log entries parsed: {len(event_logs)}")
     print(f"Browser history entries parsed: {len(browser_entries)}")
+    print(f"Recycle Bin items parsed: {len(recycle_bin_items)}")
     print(f"Findings flagged: {len(findings)}")
 
 

@@ -7,11 +7,11 @@ try:
     import psutil
 except ImportError:
     raise SystemExit(
-        "psutil not installed. Run: pip install psutil"
+        "psutil not installed. Run: pip3 install psutil"
     )
 
 EVIDENCE_DIR = "Evidences"
-
+000000000
 FIELDS = [
     "pid", "ppid", "name", "exe", "cmdline", "status", "username",
     "create_time", "cpu_percent", "cpu_times", "memory_info",
