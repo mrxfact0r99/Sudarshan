@@ -1,14 +1,30 @@
-import sys
 import time
-import concurrent.futures
+import os
+import shutil
+import itertools
+import threading
 import runpy
 from io import StringIO
-from threading import Lock
+import sys
+
+# Stop Python from writing __pycache__ in the first place. This must happen
+# before any of the collector modules get imported by runpy, so it's set
+# right at the top before anything else runs.
+sys.dont_write_bytecode = True
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 
+def clean_pycache(base="."):
+    """Actually remove any __pycache__ folders instead of just printing them."""
+    for root, dirs, files in os.walk(base):
+        if "__pycache__" in dirs:
+            path = os.path.join(root, "__pycache__")
+            shutil.rmtree(path, ignore_errors=True)
+            print(f"Removed {path}")
+
+
+clean_pycache()
 sys.stdout.reconfigure(encoding="utf-8")
-
-print_lock = Lock()
 
 MENU = [
     "Collect Running Processes",
@@ -18,6 +34,8 @@ MENU = [
     "Collect System Logs",
     "Gather Recycle Bin",
     "Collect Clipboard Things",
+    "Capture Command History",
+    "Gather Executed Programs",
 ]
 
 MODULES = {
@@ -28,6 +46,8 @@ MODULES = {
     "5": "Scripts.collectors.logs",
     "6": "Scripts.collectors.recycle",
     "7": "Scripts.collectors.clipboard",
+    "8": "Scripts.collectors.commands",
+    "9": "Scripts.collectors.execution"
     
 }
 
@@ -40,6 +60,8 @@ COLLECTION_MODULES = [
     "Scripts.collectors.logs",
     "Scripts.collectors.recycle",
     "Scripts.collectors.clipboard",
+    "Scripts.collectors.commands",
+    "Scripts.collectors.execution"
 
 ]
 
@@ -68,10 +90,9 @@ def show_menu():
     print("=" * 60)
     for i, item in enumerate(MENU, start=1):
         print(f"[{i}] {item}")
-    print("[99] Run Full Triage Collection (Parallel)")
+    print("[99] Run Full Triage Collection")
     print("[0] Exit")
     print("=" * 60)
-
 
 def run_module(module_name):
     start = time.time()
@@ -101,45 +122,60 @@ def run_module(module_name):
     }
 
 
-def run_parallel_collection(modules, max_workers=None):
-    results = {}
-    max_workers = max_workers or len(modules)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_module = {executor.submit(run_module, m): m for m in modules}
-        for future in concurrent.futures.as_completed(future_to_module):
-            module = future_to_module[future]
-            res = future.result()
-            results[module] = res
-            with print_lock:
-                status = "OK" if res["success"] else "FAILED"
-                short_name = module.rsplit(".", 1)[-1]
-                print(f"[✓] Complated ({res['elapsed']:.1f}s)")
-                if not res["success"] and res["stderr"]:
-                    print(f"      error: {res['stderr'].strip()[:300]}")
-    return results
+SPINNER_FRAMES = ["[|]", "[/]", "[-]", "[\\]"]
+
+
+def run_with_spinner(label, module_name):
+    """Run a collector module in the background while animating a rotating
+    spinner next to its label. The label only flips to a completed/failed
+    state once the module has actually finished, never on a fixed delay."""
+    box = {}
+
+    def worker():
+        box["result"] = run_module(module_name)
+
+    t = threading.Thread(target=worker)
+    t.start()
+
+    spinner = itertools.cycle(SPINNER_FRAMES)
+    while t.is_alive():
+        frame = next(spinner)
+        sys.__stdout__.write(f"\r{frame} {label}.....")
+        sys.__stdout__.flush()
+        time.sleep(0.12)
+    t.join()
+
+    res = box["result"]
+    mark = "[✓]" if res["success"] else "[✗]"
+    sys.__stdout__.write(f"\r{mark} {label}..... done ({res['elapsed']:.1f}s)\n")
+    sys.__stdout__.flush()
+    if not res["success"] and res["stderr"]:
+        print(f"      error: {res['stderr'].strip()[:300]}")
+    return res
+
+
+MODULE_LABELS = {
+    "Scripts.collectors.processes": "Collecting Processes",
+    "Scripts.collectors.networks": "Collecting Network Information",
+    "Scripts.collectors.usb": "Collecting USB Events",
+    "Scripts.collectors.history": "Collecting Browser History",
+    "Scripts.collectors.logs": "Collecting System Logs",
+    "Scripts.collectors.recycle": "Collecting Recycle Bin",
+    "Scripts.collectors.clipboard": "Collecting Clipboard History",
+    "Scripts.collectors.commands": "Collecting Command History",
+    "Scripts.collectors.execution": "Collecting Executed Programs",
+}
 
 
 def run_full_triage():
     run_start = time.time()
-    print("\nRunning full triage collection in parallel.....\n")
-    time.sleep(8)
-    print("Collecting Browser History.....\n")
-    time.sleep(10)
-    print("Collecting Processes.....\n")
-    time.sleep(15)
-    print("Collection Network Informations.....\n")
-    time.sleep(10)
-    print("Collecting Recycle Bin.....\n")
-    time.sleep(7)
-    print("Collecting System Logs.....\n")
-    time.sleep(13)
-    print("Collecting USB Events.....\n")
-    time.sleep(11)
-    print("Collecting Clipboard History.....\n")
-    time.sleep(5)
-    print("Hang On Finishing Up.....\n")
+    print("\nRunning full triage collection.....\n")
+
     t0 = time.time()
-    results = run_parallel_collection(COLLECTION_MODULES)
+    results = {}
+    for module in COLLECTION_MODULES:
+        label = MODULE_LABELS.get(module, module.rsplit(".", 1)[-1])
+        results[module] = run_with_spinner(label, module)
     collection_time = time.time() - t0
     print(f"\nCollection phase complete in {collection_time:.1f}s\n")
 
@@ -154,11 +190,9 @@ def run_full_triage():
             print(f"\nTotal time: {total:.1f}s\n")
             return
 
-    print("Going For Reporting.....\n")
     t1 = time.time()
-    run_module("Scripts.report.forensics")
+    report_res = run_with_spinner("Generating Report", "Scripts.report.forensics")
     report_time = time.time() - t1
-    print("[✓] Done\n")
 
     total = time.time() - run_start
     print("=" * 60)
@@ -166,7 +200,6 @@ def run_full_triage():
     print(f"Report phase     : {report_time:.1f}s")
     print(f"TOTAL TIME       : {total:.1f}s")
     print("=" * 60)
-
 
 def run_single(choice):
     module_name = MODULES[choice]
@@ -194,8 +227,10 @@ def main():
             run_full_triage()
             input("Press Enter to return to the menu...")
         else:
-            print("Invalid choice.")
+            print("\nInvalid choice.\n")
+            time.sleep(1)
 
+clean_pycache()
 
 if __name__ == "__main__":
     main()

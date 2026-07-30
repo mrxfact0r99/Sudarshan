@@ -6,9 +6,10 @@ import sqlite3
 import platform
 import argparse
 import tempfile
+import sys
 from datetime import datetime, timedelta
-
 from ..common import EVIDENCE_DIR, detect_os, ensure_evidence_dir
+sys.dont_write_bytecode = True
 
 
 def get_chromium_paths(os_name):

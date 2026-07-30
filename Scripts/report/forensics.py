@@ -194,15 +194,19 @@ def find_evidence_dir():
     return os.getcwd()
 
 
-def find_evidence_file(evidence_dir, keywords):
+def find_evidence_file(evidence_dir, keywords, exclude=None):
+    exclude = exclude or set()
     candidates = []
     try:
         entries = os.listdir(evidence_dir)
     except OSError:
         entries = []
     for fname in entries:
+        path = os.path.join(evidence_dir, fname)
+        if path in exclude:
+            continue
         if fname.lower().endswith(".json") and any(k in fname.lower() for k in keywords):
-            candidates.append(os.path.join(evidence_dir, fname))
+            candidates.append(path)
     if not candidates:
         return None
     candidates.sort(key=os.path.getmtime, reverse=True)
@@ -244,6 +248,14 @@ def classify_evidence_content(data):
             return "recyclebin"
         if "clipboard_content" in keys or "content_length_chars" in keys:
             return "clipboard"
+        if "totals_by_source" in keys and isinstance(data.get("artifacts"), dict):
+            artifact_keys = set(data["artifacts"].keys())
+            if artifact_keys & {"powershell_history", "bash_history", "zsh_history",
+                                 "shell_history", "run_mru", "typed_paths"}:
+                return "command_history"
+            if artifact_keys & {"running_processes", "prefetch", "shimcache_raw",
+                                 "scheduled_tasks", "services"}:
+                return "executed_programs"
         if isinstance(data.get("items"), list) and data.get("items"):
             sample = data["items"][0]
             if isinstance(sample, dict) and (
@@ -271,32 +283,50 @@ def classify_evidence_content(data):
 
 
 def resolve_evidence_files(evidence_dir):
-    """Find the five evidence files. Filename keyword matching is tried
-    first (fast, predictable); any category still missing afterwards falls
-    back to sniffing the actual JSON shape of whatever files weren't already
+    """Find the evidence files. Filename keyword matching is tried first
+    (fast, predictable); any category still missing afterwards falls back
+    to sniffing the actual JSON shape of whatever files weren't already
     claimed, so files that don't happen to include the expected word in
-    their name still get picked up. Returns (paths_dict, unclassified_list)."""
-    paths = {
-        "process": find_evidence_file(evidence_dir, ["process"]),
-        "network": find_evidence_file(evidence_dir, ["network", "connection"]),
-        "usb": find_evidence_file(evidence_dir, ["usb", "login"]),
-        "eventlog": find_evidence_file(evidence_dir, [
+    their name still get picked up.
+
+    Categories are resolved in order from most specific keyword set to
+    least specific, and each claimed file is excluded from every later
+    lookup. This matters because some category keywords are intentionally
+    broad (e.g. browser's 'history') and would otherwise also match a
+    differently-named file like 'command_history.json' meant for a
+    different category. Returns (paths_dict, unclassified_list)."""
+    order = [
+        ("process", ["process"]),
+        ("network", ["network", "connection"]),
+        ("command_history", [
+            "command_history", "cmd_history", "commandhistory",
+            "powershell_history", "bash_history", "shell_history",
+        ]),
+        ("executed_programs", [
+            "executed_programs", "executedprograms", "execution_history",
+            "running_programs", "program_execution",
+        ]),
+        ("recyclebin", ["recycle", "deleted_items", "deleteditems"]),
+        ("clipboard", ["clipboard", "clip_board", "clip-board"]),
+        ("eventlog", [
             "eventlog", "winlog", "windowslog", "syslog", "event_log",
             "system_log", "systemlog", "winevent", "win_event", "evtx", "eventviewer",
         ]),
-        "browser": find_evidence_file(evidence_dir, ["browser", "history"]),
-        "recyclebin": find_evidence_file(evidence_dir, [
-            "recycle", "deleted_items", "deleteditems",
-        ]),
-        "clipboard": find_evidence_file(evidence_dir, [
-            "clipboard", "clip_board", "clip-board",
-        ]),
-    }
+        ("usb", ["usb", "login"]),
+        ("browser", ["browser", "history"]),
+    ]
 
-    assigned = {p for p in paths.values() if p}
+    paths = {}
+    claimed = set()
+    for key, keywords in order:
+        found = find_evidence_file(evidence_dir, keywords, exclude=claimed)
+        paths[key] = found
+        if found:
+            claimed.add(found)
+
     unclassified = []
     for path in list_all_json_files(evidence_dir):
-        if path in assigned:
+        if path in claimed:
             continue
         data = peek_json(path)
         if data is None:
@@ -304,7 +334,7 @@ def resolve_evidence_files(evidence_dir):
         kind = classify_evidence_content(data)
         if kind and not paths.get(kind):
             paths[kind] = path
-            assigned.add(path)
+            claimed.add(path)
         elif kind is None:
             unclassified.append(path)
 
@@ -485,6 +515,41 @@ def load_clipboard_json(path):
         "read_method": data.get("read_method", "") or "",
         "error": data.get("error"),
     }
+
+
+ARTIFACTS_TOP_KEYS = ("artifacts",)
+
+
+def load_command_history_json(path):
+    """Shape: {generated_at, detected_os, hostname, totals_by_source: {...},
+    artifacts: {source_name: [ {...., commands: [{command, timestamp}, ...]} | {command, ...} ]}}.
+
+    Covers Windows PowerShell/cmd history as well as Linux/macOS shell
+    history (bash/zsh/etc.) - the source name is whatever key the export
+    used (e.g. 'powershell_history', 'bash_history'), and the report treats
+    any source generically rather than hard-coding an OS-specific list.
+    Returns (meta, artifacts_dict) - meta carries generated_at/detected_os/
+    hostname/totals_by_source; artifacts_dict is source_name -> raw list."""
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    meta = {k: v for k, v in data.items() if k not in ARTIFACTS_TOP_KEYS}
+    artifacts = data.get("artifacts", {}) or {}
+    return meta, artifacts
+
+
+def load_executed_programs_json(path):
+    """Shape: {generated_at, detected_os, hostname, totals_by_source: {...},
+    artifacts: {running_processes: [...], prefetch: [...], shimcache_raw: [...],
+    scheduled_tasks: [...], services: [...]}}. Any of the source keys may be
+    absent or empty depending on OS/collection method. Returns (meta,
+    artifacts_dict) - artifacts_dict is source_name -> raw list."""
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        data = json.load(f)
+
+    meta = {k: v for k, v in data.items() if k not in ARTIFACTS_TOP_KEYS}
+    artifacts = data.get("artifacts", {}) or {}
+    return meta, artifacts
 
 
 def first_present(rec, keys, default=""):
@@ -792,6 +857,110 @@ def normalize_browser_entry(rec, browser_name, idx):
     }
 
 
+def normalize_command_history(artifacts):
+    """Flattens every source in the command-history artifacts dict into a
+    single list of command records, regardless of whether that source
+    groups commands under a per-user/per-file block (e.g. powershell_history,
+    with a nested 'commands' list) or lists flat single-command records
+    directly (e.g. run_mru, typed_paths, or a plain shell history list)."""
+    entries = []
+    idx = 0
+    for source, blocks in (artifacts or {}).items():
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if not isinstance(block, dict):
+                if block:
+                    entries.append({
+                        "id": f"CMD-{idx}", "source": str(source), "user": "",
+                        "shell_or_tool": str(source), "history_file": "",
+                        "command": str(block), "timestamp": "", "_raw": block,
+                    })
+                    idx += 1
+                continue
+
+            nested_commands = block.get("commands")
+            if isinstance(nested_commands, list) and nested_commands:
+                user = str(first_present(block, ["user", "username"], ""))
+                tool = str(first_present(block, ["shell_or_tool", "shell", "tool"], source))
+                history_file = str(first_present(block, ["history_file", "file", "path"], ""))
+                for cmd_rec in nested_commands:
+                    if isinstance(cmd_rec, dict):
+                        cmd_text = str(first_present(cmd_rec, ["command", "cmd", "line"], ""))
+                        ts = str(first_present(cmd_rec, ["timestamp", "time"], "") or "")
+                    else:
+                        cmd_text = str(cmd_rec)
+                        ts = ""
+                    if not cmd_text:
+                        continue
+                    entries.append({
+                        "id": f"CMD-{idx}", "source": str(source), "user": user,
+                        "shell_or_tool": tool, "history_file": history_file,
+                        "command": cmd_text, "timestamp": ts, "_raw": cmd_rec,
+                    })
+                    idx += 1
+            else:
+                # Flat record shape - the block itself is one command/entry
+                # (e.g. a RunMRU key value, a typed path, a single history line).
+                cmd_text = str(first_present(block, ["command", "cmd", "value", "path", "entry"], ""))
+                if not cmd_text:
+                    continue
+                entries.append({
+                    "id": f"CMD-{idx}", "source": str(source),
+                    "user": str(first_present(block, ["user", "username"], "")),
+                    "shell_or_tool": str(first_present(block, ["shell_or_tool", "shell", "tool"], source)),
+                    "history_file": str(first_present(block, ["history_file", "file", "path"], "")),
+                    "command": cmd_text,
+                    "timestamp": str(first_present(block, ["timestamp", "time", "last_used"], "")),
+                    "_raw": block,
+                })
+                idx += 1
+    return entries
+
+
+def normalize_executed_programs(artifacts):
+    """Flattens every source in the executed-programs artifacts dict
+    (running_processes, prefetch, shimcache_raw, scheduled_tasks, services -
+    Windows or Linux equivalents) into a common record shape so the same
+    keyword/masquerade/remote-access heuristics used for the live process
+    snapshot can be reused here."""
+    entries = []
+    idx = 0
+    for source, records in (artifacts or {}).items():
+        if not isinstance(records, list):
+            continue
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            name = str(first_present(
+                rec, ["name", "process_name", "task_name", "display_name",
+                      "service_name", "image_name", "file_name"], ""))
+            path = str(first_present(
+                rec, ["executable_path", "path", "binary_path", "image_path",
+                      "action", "task_action", "start_command"], ""))
+            cmdline = stringify_cmdline(first_present(rec, ["command_line", "cmdline", "arguments"], ""))
+            user = str(first_present(rec, ["username", "user", "author", "run_as_user"], ""))
+            pid = first_present(rec, ["pid"], "")
+            ppid = first_present(rec, ["parent_pid", "ppid"], "")
+            timestamp = str(first_present(
+                rec, ["start_time", "last_run_time", "last_run", "last_modified",
+                      "run_date", "timestamp"], ""))
+            entries.append({
+                "id": f"EXEC-{idx}",
+                "source": str(source),
+                "name": name or "(unnamed)",
+                "path": path,
+                "command_line": cmdline,
+                "user": user,
+                "pid": str(pid) if pid not in (None, "") else "",
+                "ppid": str(ppid) if ppid not in (None, "") else "",
+                "timestamp": timestamp,
+                "_raw": rec,
+            })
+            idx += 1
+    return entries
+
+
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
@@ -804,7 +973,9 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             file_audit_enabled=None,
             recycle_bin_items=None, recycle_bin_error_items=None,
             recycle_bin_note="", recycle_bin_generated_at=None,
-            clipboard_data=None):
+            clipboard_data=None,
+            command_history_entries=None, command_history_note="",
+            executed_program_entries=None, executed_programs_note=""):
     event_logs = event_logs or []
     browser_entries = browser_entries or []
     usbstor_devices = usbstor_devices or []
@@ -813,6 +984,8 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
     recycle_bin_items = recycle_bin_items or []
     recycle_bin_error_items = recycle_bin_error_items or []
     clipboard_data = clipboard_data or {}
+    command_history_entries = command_history_entries or []
+    executed_program_entries = executed_program_entries or []
     findings = []
 
     # --- Data-quality / collection-integrity findings ---
@@ -1398,6 +1571,99 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": "-",
             })
 
+    # 14. Command history (Windows PowerShell/cmd and Linux/macOS shell) -
+    #     flag any command matching the same suspicious-keyword list used for
+    #     process command lines, plus execution from a suspicious path.
+    if not command_history_entries:
+        findings.append({
+            "severity": "Info", "target": "command_history",
+            "category": "Collection gap - no command history captured",
+            "detail": command_history_note or "No PowerShell/terminal command history was present in the evidence file.",
+            "pid": "-",
+        })
+    for cmd in command_history_entries:
+        haystack = cmd["command"].lower()
+        matched_kw = next((kw for kw in SUSPICIOUS_KEYWORDS if kw in haystack), None)
+        if matched_kw:
+            findings.append({
+                "severity": "High", "target": "command_history",
+                "category": "Suspicious command in history",
+                "detail": (f"[{cmd['source']}] command matched keyword '{matched_kw.strip()}' "
+                           f"(user: {cmd['user'] or 'unknown'}, tool: {cmd['shell_or_tool'] or cmd['source']}"
+                           f"{', at ' + cmd['timestamp'] if cmd['timestamp'] else ''}): "
+                           f"{cmd['command'][:300]}"),
+                "pid": cmd["id"],
+            })
+            continue
+        matched_path = next((frag for frag in SUSPICIOUS_PATH_FRAGMENTS if frag in haystack), None)
+        if matched_path:
+            findings.append({
+                "severity": "Medium", "target": "command_history",
+                "category": "Command references a suspicious/temporary path",
+                "detail": (f"[{cmd['source']}] command references '{matched_path.strip()}' "
+                           f"(user: {cmd['user'] or 'unknown'}"
+                           f"{', at ' + cmd['timestamp'] if cmd['timestamp'] else ''}): "
+                           f"{cmd['command'][:300]}"),
+                "pid": cmd["id"],
+            })
+
+    # 15. Recently executed programs (running_processes/prefetch/shimcache/
+    #     scheduled tasks/services) - reuse the same keyword, path, masquerade,
+    #     and remote-access-tool heuristics used for the live process snapshot.
+    if not executed_program_entries:
+        findings.append({
+            "severity": "Info", "target": "executed_programs",
+            "category": "Collection gap - no recently executed programs captured",
+            "detail": executed_programs_note or "No prefetch/shimcache/scheduled task/service/running-process execution artifacts were present in the evidence file.",
+            "pid": "-",
+        })
+    for ep in executed_program_entries:
+        haystack = " ".join([ep["name"], ep["path"], ep["command_line"]]).lower()
+        matched_kw = next((kw for kw in SUSPICIOUS_KEYWORDS if kw in haystack), None)
+        low_path = ep["path"].lower()
+        matched_path = next((frag for frag in SUSPICIOUS_PATH_FRAGMENTS if frag in low_path), None)
+        lname = ep["name"].lower()
+
+        if matched_kw:
+            findings.append({
+                "severity": "High", "target": "executed_programs",
+                "category": "Suspicious command / tool reference",
+                "detail": (f"[{ep['source']}] '{ep['name']}' matched keyword '{matched_kw.strip()}' "
+                           f"in its name/path/command line"
+                           f"{' at ' + ep['timestamp'] if ep['timestamp'] else ''}."),
+                "pid": ep["id"],
+            })
+        elif matched_path:
+            findings.append({
+                "severity": "Medium", "target": "executed_programs",
+                "category": "Execution from non-standard directory",
+                "detail": (f"[{ep['source']}] '{ep['name']}' runs from a temp/user-writable "
+                           f"location: {ep['path']}"
+                           f"{' at ' + ep['timestamp'] if ep['timestamp'] else ''}."),
+                "pid": ep["id"],
+            })
+
+        if lname in COMMONLY_SPOOFED_NAMES and ep["path"]:
+            path_low = ep["path"].lower()
+            if "system32" not in path_low and "syswow64" not in path_low \
+                    and "\\windows\\" not in path_low and "/usr/" not in path_low and "/bin/" not in path_low:
+                findings.append({
+                    "severity": "High", "target": "executed_programs",
+                    "category": "Possible process masquerading",
+                    "detail": (f"[{ep['source']}] '{ep['name']}' is named after a common system "
+                               f"process but runs from: {ep['path']}"),
+                    "pid": ep["id"],
+                })
+
+        if lname in REMOTE_ACCESS_TOOLS:
+            findings.append({
+                "severity": "Medium", "target": "executed_programs",
+                "category": "Remote access tool present",
+                "detail": (f"[{ep['source']}] '{ep['name']}' is a remote-access/remote-support "
+                           f"tool. Confirm whether its use on this host is authorized."),
+                "pid": ep["id"],
+            })
+
     return findings
 
 
@@ -1458,7 +1724,7 @@ def make_table(data, col_widths, header_bg=colors.HexColor("#1F2937")):
     return t
 
 
-def generate_pdf(output_path, case_name, examiner, evidence_source,
+def generate_pdf(output_dir, case_name, examiner, evidence_source,
                   proc_path, net_path, usb_path,
                   proc_meta, net_meta, usb_meta,
                   processes, connections, usb_events, usb_note,
@@ -1474,7 +1740,11 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                   recycle_bin_items=None, recycle_bin_error_items=None,
                   recycle_bin_note="",
                   clipboard_path=None, clipboard_meta=None,
-                  clipboard_data=None):
+                  clipboard_data=None,
+                  command_history_path=None, command_history_meta=None,
+                  command_history_entries=None,
+                  executed_programs_path=None, executed_programs_meta=None,
+                  executed_program_entries=None):
 
     eventlog_meta = eventlog_meta or {}
     event_logs = event_logs or []
@@ -1489,6 +1759,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     recycle_bin_error_items = recycle_bin_error_items or []
     clipboard_meta = clipboard_meta or {}
     clipboard_data = clipboard_data or {}
+    command_history_meta = command_history_meta or {}
+    command_history_entries = command_history_entries or []
+    executed_programs_meta = executed_programs_meta or {}
+    executed_program_entries = executed_program_entries or []
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("TitleBig", parent=styles["Title"], fontSize=23,
@@ -1505,30 +1779,73 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                             textColor=colors.HexColor("#444444"))
     cell = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=7.5, leading=9)
 
-    doc = SimpleDocTemplate(
-        output_path, pagesize=letter,
-        leftMargin=0.6 * inch, rightMargin=0.6 * inch,
-        topMargin=0.6 * inch, bottomMargin=0.6 * inch,
-        title=f"Digital Forensics Report - {case_name}",
-    )
+    os.makedirs(output_dir, exist_ok=True)
+    generated_files = []
 
-    story = []
+    def build_pdf_part(filename, part_story, part_label):
+        path = os.path.join(output_dir, filename)
+        part_doc = SimpleDocTemplate(
+            path, pagesize=letter,
+            leftMargin=0.6 * inch, rightMargin=0.6 * inch,
+            topMargin=0.6 * inch, bottomMargin=0.6 * inch,
+            title=f"Digital Forensics Report - {case_name} - {part_label}",
+        )
+
+        def add_page_number(canvas_obj, doc_obj):
+            canvas_obj.saveState()
+            canvas_obj.setFont("Helvetica", 8)
+            canvas_obj.setFillColor(colors.HexColor("#777777"))
+            canvas_obj.drawRightString(
+                letter[0] - 0.6 * inch, 0.4 * inch,
+                f"Page {doc_obj.page} — {case_name} — {part_label}"
+            )
+            canvas_obj.restoreState()
+
+        part_doc.build(part_story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+        generated_files.append(path)
+        return path
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     risk_map = build_risk_map(findings)
+
+    # The report is split into one PDF per evidence category so no single
+    # file gets huge. `story` always points at whichever part is currently
+    # being assembled; each part is built and written out independently.
+    exec_story, proc_story, net_story = [], [], []
+    usb_story, eventlog_story, browser_story = [], [], []
+    corr_story, recyclebin_story, clipboard_story = [], [], []
+    cmdhist_story, execprog_story = [], []
+
+    def part_header(title_text):
+        """Small case-identifying header repeated at the top of every
+        non-executive-summary part, since those parts no longer carry the
+        full cover page."""
+        return [
+            Paragraph(title_text, subtitle_style),
+            Spacer(1, 0.05 * inch),
+            Paragraph(
+                f"Case: {safe(case_name)} &nbsp;|&nbsp; Examiner: {safe(examiner)} "
+                f"&nbsp;|&nbsp; Report Generated: {now}", small),
+            Spacer(1, 0.15 * inch),
+        ]
+
+    story = exec_story
 
     # ---------------- Cover page ----------------
     story.append(Spacer(1, 1.0 * inch))
     story.append(Paragraph("Digital Forensics Analysis Report", title_style))
     story.append(Spacer(1, 0.12 * inch))
-    story.append(Paragraph("Process, Network, USB/Login, Event Log, Browser History, Recycle Bin &amp; Clipboard Review", subtitle_style))
+    story.append(Paragraph("Process, Network, USB/Login, Event Log, Browser History, Recycle Bin, Clipboard, Command History &amp; Executed Programs Review", subtitle_style))
     story.append(Spacer(1, 0.4 * inch))
 
     hostname = (proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname")
                 or eventlog_meta.get("hostname") or browser_meta.get("hostname")
-                or recycle_bin_meta.get("hostname") or clipboard_meta.get("hostname") or "Unknown")
+                or recycle_bin_meta.get("hostname") or clipboard_meta.get("hostname")
+                or command_history_meta.get("hostname") or executed_programs_meta.get("hostname") or "Unknown")
     os_name = (proc_meta.get("detected_os") or net_meta.get("detected_os") or usb_meta.get("detected_os")
                or eventlog_meta.get("detected_os") or browser_meta.get("detected_os")
-               or recycle_bin_meta.get("detected_os") or clipboard_meta.get("detected_os") or "Unknown")
+               or recycle_bin_meta.get("detected_os") or clipboard_meta.get("detected_os")
+               or command_history_meta.get("detected_os") or executed_programs_meta.get("detected_os") or "Unknown")
     os_version = proc_meta.get("os_version", "")
 
     cover_data = [
@@ -1545,6 +1862,8 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         ["Browser History Export Collected:", safe(browser_meta.get("generated_at", "Unknown")) if browser_path else "Not provided"],
         ["Recycle Bin Export Collected:", safe(recycle_bin_meta.get("generated_at", "Unknown")) if recycle_bin_path else "Not provided"],
         ["Clipboard Export Collected:", safe(clipboard_meta.get("generated_at", "Unknown")) if clipboard_path else "Not provided"],
+        ["Command History Export Collected:", safe(command_history_meta.get("generated_at", "Unknown")) if command_history_path else "Not provided"],
+        ["Executed Programs Export Collected:", safe(executed_programs_meta.get("generated_at", "Unknown")) if executed_programs_path else "Not provided"],
         ["Evidence File 1 (Processes):", os.path.basename(proc_path)],
         ["  SHA-256:", sha256_of_file(proc_path)],
         ["Evidence File 2 (Network):", os.path.basename(net_path)],
@@ -1575,6 +1894,16 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
             ["Evidence File 7 (Clipboard):", os.path.basename(clipboard_path)],
             ["  SHA-256:", sha256_of_file(clipboard_path)],
         ]
+    if command_history_path:
+        cover_data += [
+            ["Evidence File 8 (Command History):", os.path.basename(command_history_path)],
+            ["  SHA-256:", sha256_of_file(command_history_path)],
+        ]
+    if executed_programs_path:
+        cover_data += [
+            ["Evidence File 9 (Executed Programs):", os.path.basename(executed_programs_path)],
+            ["  SHA-256:", sha256_of_file(executed_programs_path)],
+        ]
     cover_table = Table(cover_data, colWidths=[2.3 * inch, 4.0 * inch])
     cover_table.setStyle(TableStyle([
         ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
@@ -1588,10 +1917,12 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
     story.append(Paragraph(
         "This report was generated by an automated triage script that parses "
         "process, network-connection, USB/login, Windows Event Log, browser "
-        "history, Recycle Bin, and clipboard evidence, cross-references the data sets, and "
-        "flags indicators that commonly warrant closer manual review. Automated flags and Risk "
-        "ratings are investigative leads, not conclusions - every finding below "
-        "should be independently verified by the examiner.",
+        "history, Recycle Bin, clipboard, command history (PowerShell/Windows &amp; "
+        "Linux terminal), and recently-executed-program evidence, cross-references "
+        "the data sets, and flags indicators that commonly warrant closer manual "
+        "review. Automated flags and Risk ratings are investigative leads, not "
+        "conclusions - every finding below should be independently verified by "
+        "the examiner.",
         small))
     story.append(PageBreak())
 
@@ -1611,6 +1942,8 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
          ["Total browser history entries parsed", str(len(browser_entries))],
          ["Total Recycle Bin items parsed", str(len(recycle_bin_items))],
          ["Clipboard capture present", "Yes" if clipboard_data.get("content") else "No"],
+         ["Total command history entries parsed", str(len(command_history_entries))],
+         ["Total recently executed program entries parsed", str(len(executed_program_entries))],
          ["High severity findings", str(sev_counts.get("High", 0))],
          ["Medium severity findings", str(sev_counts.get("Medium", 0))],
          ["Low severity findings", str(sev_counts.get("Low", 0))],
@@ -1639,6 +1972,8 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         ("fileop", "File Operation Flags (USB-related)"),
         ("recyclebin", "Recycle Bin / Deleted &amp; Recently Deleted File Flags"),
         ("clipboard", "Clipboard Content Flags (Passwords / Usernames / Emails / Other Sensitive Data)"),
+        ("command_history", "Suspicious Command History (PowerShell / Windows &amp; Linux Terminal)"),
+        ("executed_programs", "Suspicious Recently Executed Programs (Windows &amp; Linux)"),
     ]
     by_target = {}
     for f in findings:
@@ -1697,9 +2032,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                 Paragraph(safe(f["detail"]), cell),
             ])
         story.append(make_table(rows, col_widths=[0.45 * inch, 1.5 * inch, 0.5 * inch, 4.35 * inch]))
-    story.append(PageBreak())
 
     # ---------------- Process inventory ----------------
+    story = proc_story
+    story.extend(part_header("Digital Forensics Report — Process Inventory (Part 2 of 11)"))
     story.append(Paragraph("3. Process Inventory", h1))
     story.append(Paragraph(
         "Risk is the highest severity of any finding attached to that process (from "
@@ -1723,9 +2059,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         proc_rows,
         col_widths=[0.55 * inch, 0.5 * inch, 0.4 * inch, 0.9 * inch, 0.6 * inch, 1.45 * inch, 1.85 * inch]
     ))
-    story.append(PageBreak())
 
     # ---------------- Network inventory ----------------
+    story = net_story
+    story.extend(part_header("Digital Forensics Report — Network Connection Inventory (Part 3 of 11)"))
     story.append(Paragraph("4. Network Connection Inventory", h1))
     story.append(Spacer(1, 0.1 * inch))
 
@@ -1745,9 +2082,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         net_rows,
         col_widths=[0.55 * inch, 0.45 * inch, 0.95 * inch, 0.6 * inch, 1.55 * inch, 1.55 * inch, 0.6 * inch]
     ))
-    story.append(PageBreak())
 
     # ---------------- USB / Login inventory ----------------
+    story = usb_story
+    story.extend(part_header("Digital Forensics Report — USB &amp; Login Event Inventory (Part 4 of 11)"))
     story.append(Paragraph("5. USB &amp; Login Event Inventory", h1))
     if usb_path:
         window_min = usb_meta.get("window_minutes")
@@ -1878,9 +2216,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
             fa_rows,
             col_widths=[0.55 * inch, 0.8 * inch, 2.6 * inch, 1.1 * inch, 1.55 * inch]
         ))
-    story.append(PageBreak())
 
     # ---------------- Windows Event Log inventory ----------------
+    story = eventlog_story
+    story.extend(part_header("Digital Forensics Report — Windows Event Log Review (Part 5 of 11)"))
     story.append(Paragraph("6. Windows Event Log Review", h1))
     if eventlog_path:
         max_per_source = eventlog_meta.get("max_events_per_source")
@@ -1943,9 +2282,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                 evt_rows2,
                 col_widths=[0.65 * inch, 0.55 * inch, 0.6 * inch, 1.2 * inch, 1.2 * inch, 2.2 * inch]
             ))
-    story.append(PageBreak())
 
     # ---------------- Browser history ----------------
+    story = browser_story
+    story.extend(part_header("Digital Forensics Report — Browser History Review (Part 6 of 11)"))
     story.append(Paragraph("7. Browser History Review", h1))
     if browsers:
         profile_lines = ", ".join(
@@ -2027,9 +2367,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                 hist_rows,
                 col_widths=[0.8 * inch, 1.5 * inch, 2.6 * inch, 0.5 * inch, 1.1 * inch]
             ))
-    story.append(PageBreak())
 
     # ---------------- Correlation view ----------------
+    story = corr_story
+    story.extend(part_header("Digital Forensics Report — Process-to-Network Correlation (Part 7 of 11)"))
     story.append(Paragraph("8. Process-to-Network Correlation", h1))
     story.append(Paragraph(
         "Grouped directly from the network-connection export, which carries its own "
@@ -2051,9 +2392,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         corr_rows,
         col_widths=[0.5 * inch, 1.3 * inch, 0.9 * inch, 3.6 * inch]
     ))
-    story.append(PageBreak())
 
     # ---------------- Recycle Bin ----------------
+    story = recyclebin_story
+    story.extend(part_header("Digital Forensics Report — Recycle Bin &amp; Deleted File Review (Part 8 of 11)"))
     story.append(Paragraph("9. Recycle Bin &amp; Deleted File Review", h1))
     if recycle_bin_path:
         story.append(Paragraph(
@@ -2139,9 +2481,10 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                 all_rows,
                 col_widths=[0.45 * inch, 1.85 * inch, 0.65 * inch, 1.05 * inch, 0.6 * inch, 0.85 * inch, 1.2 * inch]
             ))
-    story.append(PageBreak())
 
     # ---------------- Clipboard ----------------
+    story = clipboard_story
+    story.extend(part_header("Digital Forensics Report — Clipboard Content Review (Part 9 of 11)"))
     story.append(Paragraph("10. Clipboard Content Review", h1))
     clip_content = clipboard_data.get("content", "")
     clip_error = clipboard_data.get("error")
@@ -2187,10 +2530,121 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
                 [["Captured Clipboard Text"], [Paragraph(safe(clip_content), cell)]],
                 col_widths=[7.4 * inch],
             ))
-    story.append(PageBreak())
+
+    # ---------------- Command History ----------------
+    story = cmdhist_story
+    story.extend(part_header("Digital Forensics Report — Command History Review (Part 10 of 11)"))
+    story.append(Paragraph("11. Command History Review (PowerShell / Windows &amp; Linux Terminal)", h1))
+    if not command_history_path:
+        story.append(Paragraph("No command history export was present in the evidence file.", body))
+    else:
+        totals = (command_history_meta.get("totals_by_source") or {})
+        if totals:
+            totals_str = ", ".join(f"{k}: {v}" for k, v in totals.items())
+            story.append(Paragraph(f"Command counts by source: {safe(totals_str)}.", body))
+        story.append(Spacer(1, 0.1 * inch))
+
+        cmd_flagged_ids = {f["pid"] for f in findings if f["target"] == "command_history" and f["pid"] not in ("-", "?")}
+        cmd_flagged = [c for c in command_history_entries if c["id"] in cmd_flagged_ids]
+        cmd_other = [c for c in command_history_entries if c["id"] not in cmd_flagged_ids]
+
+        story.append(Paragraph(f"11.1 Flagged Commands ({len(cmd_flagged)} of {len(command_history_entries)})", h2))
+        if not cmd_flagged:
+            story.append(Paragraph("No individual command matched an automated heuristic.", body))
+        else:
+            cf_rows = [["Risk", "Source", "User", "Timestamp", "Command"]]
+            for c in cmd_flagged:
+                risk = risk_map.get(c["id"], "Clean")
+                cf_rows.append([
+                    risk_label_cell(risk, cell),
+                    Paragraph(safe(c["source"]), cell),
+                    Paragraph(safe(c["user"]), cell),
+                    Paragraph(safe(c["timestamp"]), cell),
+                    Paragraph(safe(c["command"])[:300], cell),
+                ])
+            story.append(make_table(
+                cf_rows, col_widths=[0.5 * inch, 1.05 * inch, 0.75 * inch, 1.1 * inch, 3.6 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
+
+        story.append(Paragraph(
+            f"11.2 Full Command History ({len(cmd_other)} additional entries not flagged above)", h2))
+        if not cmd_other:
+            story.append(Paragraph("No additional command history entries to display.", body))
+        else:
+            co_rows = [["Source", "User", "Timestamp", "Command"]]
+            for c in cmd_other:
+                co_rows.append([
+                    Paragraph(safe(c["source"]), cell),
+                    Paragraph(safe(c["user"]), cell),
+                    Paragraph(safe(c["timestamp"]), cell),
+                    Paragraph(safe(c["command"])[:350], cell),
+                ])
+            story.append(make_table(
+                co_rows, col_widths=[1.1 * inch, 0.8 * inch, 1.15 * inch, 3.95 * inch]
+            ))
+
+    # ---------------- Executed Programs ----------------
+    story = execprog_story
+    story.extend(part_header("Digital Forensics Report — Recently Executed Programs Review (Part 11 of 11)"))
+    story.append(Paragraph("12. Recently Executed Programs Review", h1))
+    if not executed_programs_path:
+        story.append(Paragraph("No executed-programs export was present in the evidence file.", body))
+    else:
+        totals = (executed_programs_meta.get("totals_by_source") or {})
+        if totals:
+            totals_str = ", ".join(f"{k}: {v}" for k, v in totals.items())
+            story.append(Paragraph(f"Entry counts by source: {safe(totals_str)}.", body))
+        story.append(Spacer(1, 0.1 * inch))
+
+        ep_flagged_ids = {f["pid"] for f in findings if f["target"] == "executed_programs" and f["pid"] not in ("-", "?")}
+        ep_flagged = [e for e in executed_program_entries if e["id"] in ep_flagged_ids]
+        ep_other = [e for e in executed_program_entries if e["id"] not in ep_flagged_ids]
+
+        story.append(Paragraph(f"12.1 Flagged / Suspicious Executed Programs ({len(ep_flagged)} of {len(executed_program_entries)})", h2))
+        if not ep_flagged:
+            story.append(Paragraph("No individual executed-program entry matched an automated heuristic.", body))
+        else:
+            ef_rows = [["Risk", "Source", "Name", "Path / Action", "User", "Timestamp"]]
+            for e in sorted(ep_flagged, key=lambda e: RANK.get(risk_map.get(e["id"], "Clean"), -1), reverse=True):
+                risk = risk_map.get(e["id"], "Clean")
+                ef_rows.append([
+                    risk_label_cell(risk, cell),
+                    Paragraph(safe(e["source"]), cell),
+                    Paragraph(safe(e["name"]), cell),
+                    Paragraph(safe(e["path"] or e["command_line"])[:220], cell),
+                    Paragraph(safe(e["user"]), cell),
+                    Paragraph(safe(e["timestamp"]), cell),
+                ])
+            story.append(make_table(
+                ef_rows, col_widths=[0.45 * inch, 0.85 * inch, 1.1 * inch, 2.5 * inch, 0.7 * inch, 1.15 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
+
+        story.append(Paragraph(
+            f"12.2 Full Recently-Executed Program Inventory ({len(ep_other)} additional entries not flagged above)", h2))
+        if not ep_other:
+            story.append(Paragraph("No additional executed-program entries to display.", body))
+        else:
+            eo_rows = [["Source", "Name", "Path / Action", "User", "Timestamp"]]
+            for e in ep_other:
+                eo_rows.append([
+                    Paragraph(safe(e["source"]), cell),
+                    Paragraph(safe(e["name"]), cell),
+                    Paragraph(safe(e["path"] or e["command_line"])[:250], cell),
+                    Paragraph(safe(e["user"]), cell),
+                    Paragraph(safe(e["timestamp"]), cell),
+                ])
+            story.append(make_table(
+                eo_rows, col_widths=[0.95 * inch, 1.15 * inch, 2.85 * inch, 0.7 * inch, 1.1 * inch]
+            ))
 
     # ---------------- Methodology ----------------
-    story.append(Paragraph("11. Methodology &amp; Chain of Custody Notes", h1))
+    # Goes back into the Executive Summary PDF: it's about the report as a
+    # whole (chain of custody, heuristics used), not one evidence category.
+    story = exec_story
+    story.append(PageBreak())
+    story.append(Paragraph("13. Methodology &amp; Chain of Custody Notes", h1))
     story.append(Paragraph(
         "<b>Evidence handling:</b> Source files were read in place (no modification) and "
         "hashed with SHA-256 at the start of this analysis; hashes are recorded on the "
@@ -2238,10 +2692,19 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         "clipboard history.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(Paragraph(
-        "<b>Risk ratings:</b> Each row in Sections 3-7 and 9 carries a Risk label - "
-        "the highest severity of any Section 2 finding tied to that row, or 'Clean' "
-        "if no heuristic matched. Risk labels are triage aids, not a determination "
-        "of maliciousness.", body))
+        "<b>Command history &amp; executed-program keyword matching:</b> Section 2/11/12 "
+        "flags reuse the same suspicious-keyword and suspicious-path heuristics applied "
+        "to the live process snapshot, applied instead to PowerShell/terminal command "
+        "history (Windows and Linux/macOS alike) and to recently-executed-program "
+        "artifacts (running processes, prefetch, shimcache, scheduled tasks, services). "
+        "As with the other keyword-based checks, a match is a triage lead, not proof - "
+        "and the absence of a match does not clear an entry.", body))
+    story.append(Spacer(1, 0.08 * inch))
+    story.append(Paragraph(
+        "<b>Risk ratings:</b> Each row in Sections 3-7, 9, 11, and 12 carries a Risk "
+        "label - the highest severity of any Section 2 finding tied to that row, or "
+        "'Clean' if no heuristic matched. Risk labels are triage aids, not a "
+        "determination of maliciousness.", body))
     story.append(Spacer(1, 0.08 * inch))
     story.append(Paragraph(
         "<b>Limitations:</b> This tool does not perform memory carving, binary "
@@ -2253,17 +2716,19 @@ def generate_pdf(output_path, case_name, examiner, evidence_source,
         "it does not capture clipboard history and cannot recover items copied before "
         "or after collection.", body))
 
-    def add_page_number(canvas_obj, doc_obj):
-        canvas_obj.saveState()
-        canvas_obj.setFont("Helvetica", 8)
-        canvas_obj.setFillColor(colors.HexColor("#777777"))
-        canvas_obj.drawRightString(
-            letter[0] - 0.6 * inch, 0.4 * inch,
-            f"Page {doc_obj.page} — {case_name}"
-        )
-        canvas_obj.restoreState()
+    build_pdf_part("01_Executive_Summary.pdf", exec_story, "Executive Summary")
+    build_pdf_part("02_Process_Inventory.pdf", proc_story, "Process Inventory")
+    build_pdf_part("03_Network_Connections.pdf", net_story, "Network Connections")
+    build_pdf_part("04_USB_Login_Events.pdf", usb_story, "USB & Login Events")
+    build_pdf_part("05_System_Log.pdf", eventlog_story, "System Log")
+    build_pdf_part("06_Browser_History.pdf", browser_story, "Browser History")
+    build_pdf_part("07_Process_Network_Correlation.pdf", corr_story, "Process-Network Correlation")
+    build_pdf_part("08_Recycle_Bin.pdf", recyclebin_story, "Recycle Bin")
+    build_pdf_part("09_Clipboard_Content.pdf", clipboard_story, "Clipboard Content")
+    build_pdf_part("10_Command_History.pdf", cmdhist_story, "Command History")
+    build_pdf_part("11_Executed_Programs.pdf", execprog_story, "Executed Programs")
 
-    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    return generated_files
 
 
 # ---------------------------------------------------------------------------
@@ -2282,6 +2747,8 @@ def main():
     browser_path = paths["browser"]
     recycle_bin_path = paths["recyclebin"]
     clipboard_path = paths["clipboard"]
+    command_history_path = paths["command_history"]
+    executed_programs_path = paths["executed_programs"]
 
     if not proc_path or not net_path:
         print("ERROR: Could not find both a process export and a network export "
@@ -2312,6 +2779,14 @@ def main():
         print(f"  Clipboard export: {clipboard_path}")
     else:
         print("  Clipboard export: not found (that section will be skipped)")
+    if command_history_path:
+        print(f"  Command history export: {command_history_path}")
+    else:
+        print("  Command history export: not found (that section will be skipped)")
+    if executed_programs_path:
+        print(f"  Executed programs export: {executed_programs_path}")
+    else:
+        print("  Executed programs export: not found (that section will be skipped)")
     if unclassified:
         print("  NOTE: found additional .json file(s) in the evidence folder that "
               "could not be matched to any known evidence type - they are being "
@@ -2394,9 +2869,35 @@ def main():
         clipboard_data = {"meta": {}, "content": "", "content_length": 0, "read_method": "", "error": None}
     clipboard_meta = clipboard_data["meta"]
 
+    if command_history_path:
+        command_history_meta, command_history_artifacts = load_command_history_json(command_history_path)
+        if command_history_artifacts:
+            ch_summary = ", ".join(f"{src}: {len(v)}" for src, v in command_history_artifacts.items() if isinstance(v, list))
+            print(f"  Command history sources found: {ch_summary}")
+        else:
+            print("  WARNING: Command history export was found and parsed, but no "
+                  "'artifacts' entries were present in it.")
+    else:
+        command_history_meta, command_history_artifacts = {}, {}
+    command_history_note = command_history_meta.get("note", "") or ""
+
+    if executed_programs_path:
+        executed_programs_meta, executed_programs_artifacts = load_executed_programs_json(executed_programs_path)
+        if executed_programs_artifacts:
+            ep_summary = ", ".join(f"{src}: {len(v)}" for src, v in executed_programs_artifacts.items() if isinstance(v, list))
+            print(f"  Executed programs sources found: {ep_summary}")
+        else:
+            print("  WARNING: Executed programs export was found and parsed, but no "
+                  "'artifacts' entries were present in it.")
+    else:
+        executed_programs_meta, executed_programs_artifacts = {}, {}
+    executed_programs_note = executed_programs_meta.get("note", "") or ""
+
     hostname = (proc_meta.get("hostname") or net_meta.get("hostname") or usb_meta.get("hostname")
                 or eventlog_meta.get("hostname") or browser_meta.get("hostname")
-                or recycle_bin_meta.get("hostname") or clipboard_meta.get("hostname") or "Unknown host")
+                or recycle_bin_meta.get("hostname") or clipboard_meta.get("hostname")
+                or command_history_meta.get("hostname") or executed_programs_meta.get("hostname")
+                or "Unknown host")
     evidence_source = f"Automated live triage export collected from '{hostname}'"
 
     processes = [normalize_process(r, i) for i, r in enumerate(raw_processes)]
@@ -2421,6 +2922,9 @@ def main():
 
     recycle_bin_items = [normalize_recycle_bin_item(r, i) for i, r in enumerate(raw_recycle_bin_items)]
 
+    command_history_entries = normalize_command_history(command_history_artifacts)
+    executed_program_entries = normalize_executed_programs(executed_programs_artifacts)
+
     findings = analyze(processes, connections, usb_events, usb_note, login_events, login_note,
                         event_logs=event_logs, browser_entries=browser_entries,
                         usbstor_devices=usbstor_devices, usbstor_note=usbstor_note,
@@ -2431,17 +2935,19 @@ def main():
                         recycle_bin_items=recycle_bin_items, recycle_bin_error_items=recycle_bin_error_items,
                         recycle_bin_note=recycle_bin_note,
                         recycle_bin_generated_at=recycle_bin_meta.get("generated_at"),
-                        clipboard_data=clipboard_data)
+                        clipboard_data=clipboard_data,
+                        command_history_entries=command_history_entries,
+                        command_history_note=command_history_note,
+                        executed_program_entries=executed_program_entries,
+                        executed_programs_note=executed_programs_note)
 
     current_dir = os.getcwd()
 
     report_dir = os.path.join(current_dir, "Report")
     os.makedirs(report_dir, exist_ok=True)  
 
-    output_path = os.path.join(report_dir, "Forensic_Report.pdf")
-
-    generate_pdf(
-        output_path=output_path,
+    generated_files = generate_pdf(
+        output_dir=report_dir,
         case_name=case_name,
         examiner=examiner,
         evidence_source=evidence_source,
@@ -2482,9 +2988,17 @@ def main():
         clipboard_path=clipboard_path,
         clipboard_meta=clipboard_meta,
         clipboard_data=clipboard_data,
+        command_history_path=command_history_path,
+        command_history_meta=command_history_meta,
+        command_history_entries=command_history_entries,
+        executed_programs_path=executed_programs_path,
+        executed_programs_meta=executed_programs_meta,
+        executed_program_entries=executed_program_entries,
     )
 
-    print(f"\nReport written to: {output_path}")
+    print(f"\nReport written as {len(generated_files)} part(s) in: {report_dir}")
+    for f in generated_files:
+        print(f"  - {f}")
     print(f"Processes parsed: {len(processes)}")
     print(f"Connections parsed: {len(connections)}")
     print(f"USB events parsed: {len(usb_events)}")
@@ -2496,6 +3010,8 @@ def main():
     print(f"Browser history entries parsed: {len(browser_entries)}")
     print(f"Recycle Bin items parsed: {len(recycle_bin_items)}")
     print(f"Clipboard content captured: {'Yes' if clipboard_data.get('content') else 'No'}")
+    print(f"Command history entries parsed: {len(command_history_entries)}")
+    print(f"Recently executed program entries parsed: {len(executed_program_entries)}")
     print(f"Findings flagged: {len(findings)}")
 
 
