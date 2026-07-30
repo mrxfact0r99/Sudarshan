@@ -63,11 +63,9 @@ PRIVATE_NETS = [
 FAMILY_MAP = {"2": "IPv4", "10": "IPv6", "23": "IPv6", "30": "IPv6"}
 TYPE_MAP = {"1": "TCP", "2": "UDP"}
 
-# Windows logon type reference (only used if login_events carry a logon_type field)
 RISKY_LOGON_TYPES = {10: "RemoteInteractive (RDP)", 3: "Network"}
 FAILED_LOGON_EVENT_IDS = {"4625"}
 
-# Windows Event Log IDs that commonly warrant closer review during triage.
 SUSPICIOUS_EVENT_IDS = {
     "1102": ("High", "Audit log was cleared - a common anti-forensic action"),
     "104": ("High", "Event log (System/Application) was cleared"),
@@ -89,16 +87,11 @@ SUSPICIOUS_EVENT_IDS = {
     "5001": ("Medium", "Antivirus/Defender real-time protection was disabled/changed"),
 }
 
-# Message/provider keywords worth flagging even without a matching event ID above.
 SUSPICIOUS_EVENT_MESSAGE_KEYWORDS = SUSPICIOUS_KEYWORDS + [
     "windows defender", "real-time protection", "audit log was cleared",
     "log was cleared", "shadow copy", "vssadmin", "wevtutil",
 ]
 
-# Keywords in browser history (URL or page title) that commonly indicate
-# reconnaissance, evasion, or acquisition of offensive tooling. This is a
-# coarse triage heuristic, not proof of intent - plenty of legitimate research
-# (including forensics work itself) will touch some of these terms.
 SUSPICIOUS_BROWSER_KEYWORDS = [
     "mimikatz", "metasploit", "meterpreter", "cobalt strike", "empire c2",
     "bloodhound", "sharphound", "psexec", "netcat", "ncat",
@@ -110,25 +103,19 @@ SUSPICIOUS_BROWSER_KEYWORDS = [
     "pastebin.com/raw", "dark web market","murder",
 ]
 
-# Recycle Bin / deleted-file triage heuristics.
-# File extensions that are unusual/notable to see intentionally deleted.
+
 SUSPICIOUS_DELETED_EXTENSIONS = {
     ".exe", ".dll", ".bat", ".cmd", ".vbs", ".vbe", ".ps1", ".psm1",
     ".scr", ".jar", ".js", ".msi", ".sys", ".jse", ".wsf", ".hta",
 }
-# Extensions commonly associated with sensitive/valuable data - deletion of
-# these (especially if still recoverable) is worth an examiner's attention.
+
 SENSITIVE_DELETED_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".pst", ".ost",
     ".kdbx", ".zip", ".rar", ".7z", ".sql", ".db", ".accdb",
 }
-# A deletion within this many hours of the evidence being collected is
-# treated as "recent" and flagged - close temporal proximity to an
-# investigation/collection event is a common anti-forensic indicator.
+
 RECYCLE_BIN_RECENT_HOURS_HIGH = 24
 RECYCLE_BIN_RECENT_HOURS_MEDIUM = 24 * 7
-# Number of items deleted by the same user within this many minutes of each
-# other that is treated as a possible bulk/anti-forensic wipe.
 RECYCLE_BIN_BULK_WINDOW_MINUTES = 10
 RECYCLE_BIN_BULK_MIN_COUNT = 5
 
@@ -144,10 +131,6 @@ SEARCH_ENGINE_QUERY_PARAMS = {
     "startpage.com": "query",
 }
 
-# Clipboard capture triage heuristics. A clipboard export is a single
-# snapshot of whatever was last copied on the system - these checks look
-# for signs that something sensitive (credentials, PII, key material) was
-# sitting on the clipboard at collection time.
 CLIPBOARD_KEYWORD_HINTS = [
     "password", "passwd", "pwd", "username", "user name", "login:",
     "api key", "apikey", "api_key", "secret", "access token", "auth token",
@@ -180,9 +163,6 @@ SEVERITY_COLOR = {
     "Clean": colors.HexColor("#6B7280"),
 }
 
-# ---------------------------------------------------------------------------
-# Evidence file discovery
-# ---------------------------------------------------------------------------
 
 def find_evidence_dir():
     here = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
@@ -224,9 +204,6 @@ def list_all_json_files(evidence_dir):
 
 
 def peek_json(path):
-    """Best-effort JSON load used only for content-based classification.
-    Returns None (rather than raising) on any parse/read failure so a bad
-    file doesn't crash evidence discovery."""
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             return json.load(f)
@@ -235,9 +212,6 @@ def peek_json(path):
 
 
 def classify_evidence_content(data):
-    """Identify which evidence category a parsed JSON document looks like,
-    based on its shape rather than its filename. Returns one of
-    'eventlog', 'browser', 'usb', 'process', 'network', 'recyclebin', or None."""
     if isinstance(data, dict):
         keys = set(data.keys())
         if "logs" in keys and isinstance(data.get("logs"), dict):
@@ -283,18 +257,6 @@ def classify_evidence_content(data):
 
 
 def resolve_evidence_files(evidence_dir):
-    """Find the evidence files. Filename keyword matching is tried first
-    (fast, predictable); any category still missing afterwards falls back
-    to sniffing the actual JSON shape of whatever files weren't already
-    claimed, so files that don't happen to include the expected word in
-    their name still get picked up.
-
-    Categories are resolved in order from most specific keyword set to
-    least specific, and each claimed file is excluded from every later
-    lookup. This matters because some category keywords are intentionally
-    broad (e.g. browser's 'history') and would otherwise also match a
-    differently-named file like 'command_history.json' meant for a
-    different category. Returns (paths_dict, unclassified_list)."""
     order = [
         ("process", ["process"]),
         ("network", ["network", "connection"]),
@@ -341,9 +303,6 @@ def resolve_evidence_files(evidence_dir):
     return paths, unclassified
 
 
-# ---------------------------------------------------------------------------
-# Loading helpers
-# ---------------------------------------------------------------------------
 
 def sha256_of_file(path):
     h = hashlib.sha256()
@@ -380,19 +339,6 @@ USB_LOGIN_TOP_KEYS = ("usb_events", "login_events", "usbstor_history", "file_ope
 
 
 def load_usb_login_json(path):
-    """Handles both the original shape:
-      {..., usb_events: {count, events, note}, login_events: {count, events, note}}
-    and the newer, richer shape which additionally carries:
-      usbstor_history: {count, devices, note}   -- all USB storage devices ever
-                                                     connected (from the registry),
-                                                     with no timestamp.
-      file_operations: {
-        writes_creates_deletes_renames: {count, events, note, source},
-        read_write_audit: {count, events, note, source, enabled},
-      }
-    Returns a dict so new fields can be added without breaking callers that only
-    look up the keys they need.
-    """
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -423,8 +369,6 @@ def load_usb_login_json(path):
 
 
 def load_eventlog_json(path):
-    """Shape: {..., logs: {"System": [...], "Application": [...], "Security": [...]}}.
-    Returns (meta, {channel_name: [raw_records]})."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -438,8 +382,6 @@ def load_eventlog_json(path):
 
 
 def load_browser_json(path):
-    """Shape: {..., browsers: {"Chrome (Profile 1)": {source_path, history_count,
-    history: [...]}}}. Returns (meta, {browser_name: {source_path, history: [...]}})."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -461,15 +403,6 @@ RECYCLE_BIN_TOP_KEYS = ("items",)
 
 
 def load_recycle_bin_json(path):
-    """Shape: {generated_at, detected_os, hostname, total_deleted_items,
-    items: [ {sid, index_file, data_file, data_file_recoverable, version,
-    file_size, deleted_time, original_name}  |  {sid, error} , ... ]}.
-
-    Some items are per-user-SID errors (e.g. 'Permission denied... Run as
-    Administrator') rather than actual deleted-file records - those are
-    split out separately so they can be reported as collection gaps instead
-    of being normalized as if they were deleted files.
-    Returns a dict: {meta, items, error_items, note}."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -498,11 +431,6 @@ CLIPBOARD_TOP_KEYS = ("clipboard_content",)
 
 
 def load_clipboard_json(path):
-    """Shape: {generated_at, detected_os, hostname, read_method,
-    clipboard_content, content_length_chars, error}. Unlike the other
-    evidence files this is a single flat snapshot (one clipboard capture),
-    not a list of records. Returns a dict: {meta, content, content_length,
-    read_method, error}."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -521,15 +449,6 @@ ARTIFACTS_TOP_KEYS = ("artifacts",)
 
 
 def load_command_history_json(path):
-    """Shape: {generated_at, detected_os, hostname, totals_by_source: {...},
-    artifacts: {source_name: [ {...., commands: [{command, timestamp}, ...]} | {command, ...} ]}}.
-
-    Covers Windows PowerShell/cmd history as well as Linux/macOS shell
-    history (bash/zsh/etc.) - the source name is whatever key the export
-    used (e.g. 'powershell_history', 'bash_history'), and the report treats
-    any source generically rather than hard-coding an OS-specific list.
-    Returns (meta, artifacts_dict) - meta carries generated_at/detected_os/
-    hostname/totals_by_source; artifacts_dict is source_name -> raw list."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -539,11 +458,6 @@ def load_command_history_json(path):
 
 
 def load_executed_programs_json(path):
-    """Shape: {generated_at, detected_os, hostname, totals_by_source: {...},
-    artifacts: {running_processes: [...], prefetch: [...], shimcache_raw: [...],
-    scheduled_tasks: [...], services: [...]}}. Any of the source keys may be
-    absent or empty depending on OS/collection method. Returns (meta,
-    artifacts_dict) - artifacts_dict is source_name -> raw list."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         data = json.load(f)
 
@@ -560,14 +474,6 @@ def first_present(rec, keys, default=""):
 
 
 def extract_numeric_pid(raw):
-    """Return (numeric_pid_str_or_None, was_recovered_bool).
-
-    Handles plain ints/numeric strings as well as the common collection bug
-    where psutil's Process.pid was called as a *method* instead of read as a
-    property, which serializes to something like:
-      "<bound method Process.pid of <psutil.Process(pid=1234, name='x.exe') ...>>"
-    The real numeric PID is still recoverable from inside that string.
-    """
     if isinstance(raw, int):
         return str(raw), False
     if isinstance(raw, str):
@@ -611,8 +517,6 @@ def is_private_or_reserved(addr):
 
 
 def parse_dotnet_date(raw):
-    """Parse timestamps shaped like '/Date(1784193031572)/' (ms since epoch, UTC).
-    Falls back to returning the original string unchanged if it doesn't match."""
     if not raw:
         return ""
     s = str(raw)
@@ -628,8 +532,6 @@ def parse_dotnet_date(raw):
 
 
 def extract_search_query(url):
-    """If the URL looks like a search-engine results page, return the decoded
-    query string; otherwise return None."""
     if not url:
         return None
     try:
@@ -645,10 +547,6 @@ def extract_search_query(url):
                 return values[0]
     return None
 
-
-# ---------------------------------------------------------------------------
-# Normalization
-# ---------------------------------------------------------------------------
 
 def normalize_process(rec, idx):
     raw_pid = rec.get("pid")
@@ -858,11 +756,6 @@ def normalize_browser_entry(rec, browser_name, idx):
 
 
 def normalize_command_history(artifacts):
-    """Flattens every source in the command-history artifacts dict into a
-    single list of command records, regardless of whether that source
-    groups commands under a per-user/per-file block (e.g. powershell_history,
-    with a nested 'commands' list) or lists flat single-command records
-    directly (e.g. run_mru, typed_paths, or a plain shell history list)."""
     entries = []
     idx = 0
     for source, blocks in (artifacts or {}).items():
@@ -919,11 +812,6 @@ def normalize_command_history(artifacts):
 
 
 def normalize_executed_programs(artifacts):
-    """Flattens every source in the executed-programs artifacts dict
-    (running_processes, prefetch, shimcache_raw, scheduled_tasks, services -
-    Windows or Linux equivalents) into a common record shape so the same
-    keyword/masquerade/remote-access heuristics used for the live process
-    snapshot can be reused here."""
     entries = []
     idx = 0
     for source, records in (artifacts or {}).items():
@@ -960,11 +848,6 @@ def normalize_executed_programs(artifacts):
             idx += 1
     return entries
 
-
-# ---------------------------------------------------------------------------
-# Analysis
-# ---------------------------------------------------------------------------
-
 def analyze(processes, connections, usb_events, usb_note, login_events, login_note,
             event_logs=None, browser_entries=None,
             usbstor_devices=None, usbstor_note="",
@@ -988,7 +871,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
     executed_program_entries = executed_program_entries or []
     findings = []
 
-    # --- Data-quality / collection-integrity findings ---
     recovered_pid_count = sum(1 for p in processes if p.get("pid_recovered"))
     if recovered_pid_count:
         findings.append({
@@ -1047,7 +929,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             "pid": "-",
         })
 
-    # USBSTOR registry history - every USB storage device ever connected, no timestamp.
     if not usbstor_devices and not usb_events:
         findings.append({
             "severity": "Info", "target": "usb",
@@ -1079,7 +960,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": d["id"],
             })
 
-    # File operations on/around removable storage (USN Journal + Security 4663 audit).
     if not file_write_events:
         findings.append({
             "severity": "Info", "target": "fileop",
@@ -1137,7 +1017,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
 
     flagged_names = set()
 
-    # 1. Suspicious keywords
     for p in processes:
         haystack = " ".join([p["name"], p["path"], p["cmdline"]]).lower()
         for kw in SUSPICIOUS_KEYWORDS:
@@ -1152,7 +1031,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 flagged_names.add(p["name"].lower())
                 break
 
-    # 2. Execution from suspicious / user-writable paths
     for p in processes:
         low_path = p["path"].lower()
         for frag in SUSPICIOUS_PATH_FRAGMENTS:
@@ -1167,7 +1045,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 flagged_names.add(p["name"].lower())
                 break
 
-    # 3. Masquerading
     for p in processes:
         lname = p["name"].lower()
         if lname in COMMONLY_SPOOFED_NAMES and p["path"]:
@@ -1183,7 +1060,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 })
                 flagged_names.add(p["name"].lower())
 
-    # 4. Remote access tooling
     for p in processes:
         if p["name"].lower() in REMOTE_ACCESS_TOOLS:
             findings.append({
@@ -1194,7 +1070,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": p["pid"],
             })
 
-    # 5. External network connections
     for c in connections:
         raddr = c["raddr"]
         if raddr and not is_private_or_reserved(raddr):
@@ -1211,7 +1086,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": c["pid"],
             })
 
-    # 6. High-risk ports
     for c in connections:
         for port_field in (c["rport"], c["lport"]):
             try:
@@ -1226,7 +1100,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             except ValueError:
                 pass
 
-    # 7. Network activity from an already-flagged process (name-based join)
     for c in connections:
         if c["program"].lower() in flagged_names and c["raddr"]:
             findings.append({
@@ -1238,7 +1111,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": c["pid"],
             })
 
-    # 8. USB events - flag every connection event, escalate for unidentified devices
     for u in usb_events:
         has_id = bool(u["vendor_id"] or u["product_id"] or u["serial"])
         severity = "Low" if has_id else "Medium"
@@ -1256,7 +1128,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             "pid": u["id"],
         })
 
-    # 9. Login events - failures, RDP/network logons, unrecognized sources
     failure_counter = {}
     for l in login_events:
         is_failure = str(l["event_id"]) in FAILED_LOGON_EVENT_IDS or \
@@ -1297,8 +1168,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": "-",
             })
 
-    # 10. Windows Event Log entries - known-risky event IDs, error/critical levels,
-    #     and keyword matches in the message text.
     if not event_logs:
         findings.append({
             "severity": "Info", "target": "eventlog",
@@ -1342,7 +1211,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": e["id"],
             })
 
-    # 11. Browser history - keyword matches on URL/title.
     if not browser_entries:
         findings.append({
             "severity": "Info", "target": "browser",
@@ -1364,7 +1232,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 })
                 break
 
-    # 12. Recycle Bin - deleted / recently-deleted file activity.
     if not recycle_bin_items and not recycle_bin_error_items:
         findings.append({
             "severity": "Info", "target": "recyclebin",
@@ -1382,18 +1249,13 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             "pid": "-",
         })
 
-    # Reference time for "how recently was this deleted" - prefer the
-    # export's own generated_at timestamp (the moment evidence was
-    # collected) over wall-clock now, since the two can differ.
     now_ref = None
     if recycle_bin_generated_at:
         now_ref = parse_recycle_bin_timestamp(recycle_bin_generated_at)
     if now_ref is None:
         now_ref = datetime.now()
 
-    # Bulk-deletion detection: many items removed by the same user within a
-    # short window is a common anti-forensic "clean up before handing over
-    # the machine" pattern.
+
     by_sid_time = {}
     for it in recycle_bin_items:
         if it["deleted_time_dt"] is not None:
@@ -1416,13 +1278,12 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                                f"deliberate evidence cleanup."),
                     "pid": "-",
                 })
-                window = []  # avoid re-flagging every overlapping sub-window
+                window = []  
 
     for it in recycle_bin_items:
         name = it["original_name"] or it["index_file"] or "(unknown file name)"
         haystack = f"{it['original_name']} {it['index_file']}".lower()
 
-        # Recency relative to collection time.
         age_hours = None
         if it["deleted_time_dt"] is not None:
             age_hours = (now_ref - it["deleted_time_dt"]).total_seconds() / 3600.0
@@ -1440,7 +1301,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 recency_severity = "Low"
                 recency_note = "deleted_time is after the evidence collection timestamp (clock skew or tampering?)"
 
-        # Suspicious keyword / path fragment match on the original path.
         matched_kw = next((kw for kw in SUSPICIOUS_KEYWORDS if kw in haystack), None)
         matched_path = next((frag for frag in SUSPICIOUS_PATH_FRAGMENTS if frag in haystack), None)
 
@@ -1491,7 +1351,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": it["id"],
             })
 
-    # 13. Clipboard - keyword/pattern matches on the last-copied content.
     clip_content = clipboard_data.get("content", "")
     clip_error = clipboard_data.get("error")
     if not clipboard_data:
@@ -1541,8 +1400,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 if label == "Email address":
                     redacted = snippet
                 else:
-                    # Avoid echoing the full sensitive value into the report;
-                    # show only enough to identify the match was real.
                     redacted = snippet[:4] + "…" + snippet[-4:] if len(snippet) > 10 else "(redacted)"
                 findings.append({
                     "severity": severity, "target": "clipboard",
@@ -1571,9 +1428,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": "-",
             })
 
-    # 14. Command history (Windows PowerShell/cmd and Linux/macOS shell) -
-    #     flag any command matching the same suspicious-keyword list used for
-    #     process command lines, plus execution from a suspicious path.
     if not command_history_entries:
         findings.append({
             "severity": "Info", "target": "command_history",
@@ -1607,9 +1461,6 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": cmd["id"],
             })
 
-    # 15. Recently executed programs (running_processes/prefetch/shimcache/
-    #     scheduled tasks/services) - reuse the same keyword, path, masquerade,
-    #     and remote-access-tool heuristics used for the live process snapshot.
     if not executed_program_entries:
         findings.append({
             "severity": "Info", "target": "executed_programs",
@@ -1676,7 +1527,6 @@ def build_network_correlation(connections):
 
 
 def build_risk_map(findings):
-    """row-id -> highest severity, for High/Medium/Low findings only (Info excluded)."""
     m = {}
     for f in findings:
         sev = f["severity"]
@@ -1695,9 +1545,6 @@ def risk_label_cell(risk, cell_style):
     return Paragraph(f'<font color="{color.hexval()}"><b>{risk}</b></font>', cell_style)
 
 
-# ---------------------------------------------------------------------------
-# PDF generation
-# ---------------------------------------------------------------------------
 
 SEVERITY_ORDER = {"High": 0, "Medium": 1, "Low": 2, "Info": 3}
 
@@ -1808,18 +1655,12 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     risk_map = build_risk_map(findings)
 
-    # The report is split into one PDF per evidence category so no single
-    # file gets huge. `story` always points at whichever part is currently
-    # being assembled; each part is built and written out independently.
     exec_story, proc_story, net_story = [], [], []
     usb_story, eventlog_story, browser_story = [], [], []
     corr_story, recyclebin_story, clipboard_story = [], [], []
     cmdhist_story, execprog_story = [], []
 
     def part_header(title_text):
-        """Small case-identifying header repeated at the top of every
-        non-executive-summary part, since those parts no longer carry the
-        full cover page."""
         return [
             Paragraph(title_text, subtitle_style),
             Spacer(1, 0.05 * inch),
@@ -1831,7 +1672,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
 
     story = exec_story
 
-    # ---------------- Cover page ----------------
     story.append(Spacer(1, 1.0 * inch))
     story.append(Paragraph("Digital Forensics Analysis Report", title_style))
     story.append(Spacer(1, 0.12 * inch))
@@ -1926,7 +1766,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
         small))
     story.append(PageBreak())
 
-    # ---------------- Executive summary ----------------
     story.append(Paragraph("1. Executive Summary", h1))
     sev_counts = {"High": 0, "Medium": 0, "Low": 0, "Info": 0}
     for f in findings:
@@ -1958,10 +1797,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
         f"{sev_counts.get('Low', 0)} low, and {sev_counts.get('Info', 0)} informational "
         f"(data-quality) notes. Details for each are in Section 2.", body))
 
-    # Per-category breakdown so every evidence type gets its own visible
-    # rundown in the summary - not just whichever findings happened to be
-    # marked "High" (USB findings in particular are usually Medium/Low, and
-    # would otherwise never show up here).
     EXEC_SUMMARY_CATEGORIES = [
         ("browser", "Suspicious Browser Search / History Activity"),
         ("process", "Suspicious Running Processes"),
@@ -2017,7 +1852,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
         story.append(Spacer(1, 0.12 * inch))
     story.append(PageBreak())
 
-    # ---------------- Findings ----------------
     story.append(Paragraph("2. Flagged Findings", h1))
     if not findings:
         story.append(Paragraph("No automated findings to display.", body))
@@ -2033,7 +1867,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
             ])
         story.append(make_table(rows, col_widths=[0.45 * inch, 1.5 * inch, 0.5 * inch, 4.35 * inch]))
 
-    # ---------------- Process inventory ----------------
     story = proc_story
     story.extend(part_header("Digital Forensics Report — Process Inventory (Part 2 of 11)"))
     story.append(Paragraph("3. Process Inventory", h1))
@@ -2060,7 +1893,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
         col_widths=[0.55 * inch, 0.5 * inch, 0.4 * inch, 0.9 * inch, 0.6 * inch, 1.45 * inch, 1.85 * inch]
     ))
 
-    # ---------------- Network inventory ----------------
     story = net_story
     story.extend(part_header("Digital Forensics Report — Network Connection Inventory (Part 3 of 11)"))
     story.append(Paragraph("4. Network Connection Inventory", h1))
@@ -2083,7 +1915,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
         col_widths=[0.55 * inch, 0.45 * inch, 0.95 * inch, 0.6 * inch, 1.55 * inch, 1.55 * inch, 0.6 * inch]
     ))
 
-    # ---------------- USB / Login inventory ----------------
     story = usb_story
     story.extend(part_header("Digital Forensics Report — USB &amp; Login Event Inventory (Part 4 of 11)"))
     story.append(Paragraph("5. USB &amp; Login Event Inventory", h1))
@@ -2217,7 +2048,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
             col_widths=[0.55 * inch, 0.8 * inch, 2.6 * inch, 1.1 * inch, 1.55 * inch]
         ))
 
-    # ---------------- Windows Event Log inventory ----------------
     story = eventlog_story
     story.extend(part_header("Digital Forensics Report — Windows Event Log Review (Part 5 of 11)"))
     story.append(Paragraph("6. Windows Event Log Review", h1))
@@ -2283,7 +2113,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 col_widths=[0.65 * inch, 0.55 * inch, 0.6 * inch, 1.2 * inch, 1.2 * inch, 2.2 * inch]
             ))
 
-    # ---------------- Browser history ----------------
     story = browser_story
     story.extend(part_header("Digital Forensics Report — Browser History Review (Part 6 of 11)"))
     story.append(Paragraph("7. Browser History Review", h1))
@@ -2368,7 +2197,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 col_widths=[0.8 * inch, 1.5 * inch, 2.6 * inch, 0.5 * inch, 1.1 * inch]
             ))
 
-    # ---------------- Correlation view ----------------
     story = corr_story
     story.extend(part_header("Digital Forensics Report — Process-to-Network Correlation (Part 7 of 11)"))
     story.append(Paragraph("8. Process-to-Network Correlation", h1))
@@ -2393,7 +2221,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
         col_widths=[0.5 * inch, 1.3 * inch, 0.9 * inch, 3.6 * inch]
     ))
 
-    # ---------------- Recycle Bin ----------------
     story = recyclebin_story
     story.extend(part_header("Digital Forensics Report — Recycle Bin &amp; Deleted File Review (Part 8 of 11)"))
     story.append(Paragraph("9. Recycle Bin &amp; Deleted File Review", h1))
@@ -2482,7 +2309,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 col_widths=[0.45 * inch, 1.85 * inch, 0.65 * inch, 1.05 * inch, 0.6 * inch, 0.85 * inch, 1.2 * inch]
             ))
 
-    # ---------------- Clipboard ----------------
     story = clipboard_story
     story.extend(part_header("Digital Forensics Report — Clipboard Content Review (Part 9 of 11)"))
     story.append(Paragraph("10. Clipboard Content Review", h1))
@@ -2531,7 +2357,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 col_widths=[7.4 * inch],
             ))
 
-    # ---------------- Command History ----------------
     story = cmdhist_story
     story.extend(part_header("Digital Forensics Report — Command History Review (Part 10 of 11)"))
     story.append(Paragraph("11. Command History Review (PowerShell / Windows &amp; Linux Terminal)", h1))
@@ -2584,7 +2409,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 co_rows, col_widths=[1.1 * inch, 0.8 * inch, 1.15 * inch, 3.95 * inch]
             ))
 
-    # ---------------- Executed Programs ----------------
     story = execprog_story
     story.extend(part_header("Digital Forensics Report — Recently Executed Programs Review (Part 11 of 11)"))
     story.append(Paragraph("12. Recently Executed Programs Review", h1))
@@ -2639,9 +2463,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 eo_rows, col_widths=[0.95 * inch, 1.15 * inch, 2.85 * inch, 0.7 * inch, 1.1 * inch]
             ))
 
-    # ---------------- Methodology ----------------
-    # Goes back into the Executive Summary PDF: it's about the report as a
-    # whole (chain of custody, heuristics used), not one evidence category.
     story = exec_story
     story.append(PageBreak())
     story.append(Paragraph("13. Methodology &amp; Chain of Custody Notes", h1))
@@ -2730,10 +2551,6 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
 
     return generated_files
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     evidence_dir = find_evidence_dir()

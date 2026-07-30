@@ -10,8 +10,6 @@ from datetime import datetime, timedelta
 try:
     from ..common import detect_os
 except ImportError:
-    # Allow running this file directly instead of only as part of the
-    # package (python -m Scripts.collectors.command_history).
     sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
     from common import detect_os
 
@@ -21,12 +19,9 @@ except ImportError:
     winreg = None
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+
 
 def filetime_to_datetime(ft):
-    """Convert a Windows FILETIME (100-ns intervals since 1601-01-01) to datetime."""
     if not ft or ft <= 0:
         return None
     try:
@@ -52,14 +47,8 @@ def safe_read_lines(path):
         return f.readlines()
 
 
-# ---------------------------------------------------------------------------
-# Shell history parsers (shared logic, used on Linux; also relevant for
-# WSL / Git Bash homes that may exist on a Windows box)
-# ---------------------------------------------------------------------------
 
 def parse_bash_history(path):
-    """Plain bash history, with support for EXTENDED_HISTORY-style
-    '#<epoch>' timestamp comment lines preceding each command."""
     entries = []
     lines = safe_read_lines(path)
     pending_ts = None
@@ -79,8 +68,6 @@ def parse_bash_history(path):
 
 
 def parse_zsh_history(path):
-    """Zsh EXTENDED_HISTORY format: ': <start>:<elapsed>;<command>'.
-    Falls back to treating the whole line as the command otherwise."""
     entries = []
     lines = safe_read_lines(path)
 
@@ -99,10 +86,6 @@ def parse_zsh_history(path):
 
 
 def parse_fish_history(path):
-    """Fish history is a simple YAML-like sequence:
-    - cmd: <command>
-      when: <epoch>
-    """
     entries = []
     lines = safe_read_lines(path)
     current_cmd = None
@@ -127,8 +110,6 @@ def parse_fish_history(path):
 
 
 def parse_plain_history(path):
-    """Generic one-command-per-line fallback (python, mysql, psql, sqlite,
-    redis-cli, node repl, etc. -- none of these embed timestamps)."""
     entries = []
     for line in safe_read_lines(path):
         line = line.rstrip("\n")
@@ -138,7 +119,6 @@ def parse_plain_history(path):
     return entries
 
 
-# Map of (relative_path_from_home, tool_label, parser)
 LINUX_HISTORY_FILES = [
     (".bash_history", "bash", parse_bash_history),
     (".zsh_history", "zsh", parse_zsh_history),
@@ -184,18 +164,14 @@ def collect_history_for_home(home_dir, username):
 def collect_linux_command_history():
     entries = []
 
-    # Current user's home (works without elevated privileges).
     current_home = os.path.expanduser("~")
     current_user = os.environ.get("USER") or os.environ.get("LOGNAME") or os.path.basename(current_home)
     entries.extend(collect_history_for_home(current_home, current_user))
 
-    # Root, if we can read it (only works when run as root/sudo).
     if current_home != "/root" and os.path.isdir("/root"):
         entries.extend(collect_history_for_home("/root", "root"))
 
-    # Other local users under /home -- best effort, skipped silently on
-    # permission errors since reading another user's history requires
-    # elevated privileges.
+
     if os.path.isdir("/home"):
         try:
             for entry in os.listdir("/home"):
@@ -208,10 +184,6 @@ def collect_linux_command_history():
 
     return entries
 
-
-# ---------------------------------------------------------------------------
-# Windows: PowerShell PSReadLine history + RunMRU / TypedPaths
-# ---------------------------------------------------------------------------
 
 def collect_powershell_history_for_profile(appdata_roaming, username):
     """PSReadLine persists command history to a plain-text file shared by
@@ -246,7 +218,6 @@ def collect_powershell_history_for_profile(appdata_roaming, username):
 def collect_windows_powershell_history():
     entries = []
 
-    # Current user, via APPDATA (fast path, no filesystem enumeration needed).
     appdata = os.environ.get("APPDATA")
     current_user = os.environ.get("USERNAME", "unknown")
     if appdata:
@@ -254,8 +225,6 @@ def collect_windows_powershell_history():
         if result:
             entries.append(result)
 
-    # Other local user profiles -- best effort; each user's Roaming AppData
-    # is normally only readable by that user and Administrators.
     system_drive = os.environ.get("SystemDrive", "C:")
     users_root = f"{system_drive}\\Users"
     if os.path.isdir(users_root):
@@ -304,9 +273,7 @@ def _read_registry_values(hive, subkey):
 
 
 def collect_windows_runmru():
-    """Start -> Run MRU: commands typed into the Windows Run dialog.
-    HKCU only -- reading another user's RunMRU requires loading their
-    NTUSER.DAT hive offline, which is out of scope here."""
+
     if winreg is None:
         return {"error": "winreg module unavailable (not running on Windows)"}
 
@@ -332,8 +299,7 @@ def collect_windows_runmru():
 
 
 def collect_windows_typed_paths():
-    """Explorer address-bar TypedPaths -- adjacent execution-relevant
-    artifact showing paths/commands typed into the Explorer address bar."""
+
     if winreg is None:
         return {"error": "winreg module unavailable (not running on Windows)"}
 
@@ -352,10 +318,6 @@ def collect_windows_command_history():
         "typed_paths": collect_windows_typed_paths(),
     }
 
-
-# ---------------------------------------------------------------------------
-# Dispatch / evidence output
-# ---------------------------------------------------------------------------
 
 def collect_command_history(os_name):
     if os_name == "Windows":

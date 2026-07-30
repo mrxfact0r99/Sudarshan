@@ -12,8 +12,7 @@ from datetime import datetime, timedelta
 try:
     from ..common import detect_os
 except ImportError:
-    # Allow running this file directly instead of only as part of the
-    # package (python -m Scripts.collectors.executed_programs).
+
     sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
     from common import detect_os
 
@@ -28,12 +27,8 @@ except ImportError:
     psutil = None
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def filetime_to_datetime(ft):
-    """Convert a Windows FILETIME (100-ns intervals since 1601-01-01) to datetime."""
     if not ft or ft <= 0:
         return None
     try:
@@ -43,7 +38,6 @@ def filetime_to_datetime(ft):
 
 
 def run_command(args, timeout=30):
-    """Run a subprocess and return (stdout, error) -- never raises."""
     try:
         result = subprocess.run(
             args, capture_output=True, text=True, timeout=timeout, check=False
@@ -71,15 +65,6 @@ def stat_times(path):
         return {"error": str(e)}
 
 
-# ---------------------------------------------------------------------------
-# Genuine-user-process filtering
-#
-# Goal: keep entries that look like something a human actually launched
-# (chrome.exe, Code.exe, notepad.exe, ...) and drop OS/service/background
-# noise (System, svchost.exe, csrss.exe, helper/utility child processes, ...).
-# This only affects "running_processes" -- prefetch/shimcache/scheduled
-# tasks/services are left exactly as before.
-# ---------------------------------------------------------------------------
 
 WINDOWS_SYSTEM_ACCOUNTS = {
     "nt authority\\system",
@@ -87,8 +72,6 @@ WINDOWS_SYSTEM_ACCOUNTS = {
     "nt authority\\network service",
 }
 
-# Path prefixes that are effectively "OS/background", not something the
-# user double-clicked or typed to run.
 WINDOWS_SYSTEM_PATH_MARKERS = (
     "\\windows\\system32",
     "\\windows\\syswow64",
@@ -96,11 +79,9 @@ WINDOWS_SYSTEM_PATH_MARKERS = (
     "\\windows\\immersivecontrolpanel",
     "\\windows\\servicing",
     "\\programdata\\microsoft\\windows defender",
-    "\\windows\\",  # catches anything else directly under \Windows\
+    "\\windows\\",  
 )
 
-# Known background/helper process names that live outside System32 too
-# (or whose path we may not have), so a name-based backstop is useful.
 WINDOWS_NOISE_NAMES = {
     "system", "system idle process", "registry", "smss.exe", "csrss.exe",
     "wininit.exe", "winlogon.exe", "services.exe", "lsass.exe", "lsaiso.exe",
@@ -112,9 +93,6 @@ WINDOWS_NOISE_NAMES = {
     "securityhealthservice.exe", "wudfhost.exe", "wlanext.exe",
 }
 
-# Command-line markers for child/utility/renderer processes spawned by a
-# parent app (Chromium/Electron/VS Code style) -- not something the user
-# separately launched.
 WINDOWS_CHILD_CMDLINE_MARKERS = ("--type=", "--utility-sub-type=")
 
 
@@ -176,10 +154,6 @@ def is_genuine_linux_process(entry):
     return True
 
 
-# ---------------------------------------------------------------------------
-# Windows: currently running processes
-# ---------------------------------------------------------------------------
-
 def collect_windows_processes():
     if psutil is not None:
         entries = []
@@ -202,8 +176,6 @@ def collect_windows_processes():
                 continue
         return [e for e in entries if is_genuine_windows_process(e)]
 
-    # Fallback: tasklist (no full path / cmdline without psutil, so we can
-    # only filter on username + known noise names here).
     stdout, err = run_command(["tasklist", "/v", "/fo", "csv"])
     if err:
         return {"error": f"psutil not installed and tasklist failed: {err}"}
@@ -230,9 +202,6 @@ def collect_windows_processes():
     return entries
 
 
-# ---------------------------------------------------------------------------
-# Windows: Prefetch (recently executed .exe evidence)
-# ---------------------------------------------------------------------------
 
 def collect_windows_prefetch():
     windir = os.environ.get("SystemRoot", "C:\\Windows")
@@ -268,16 +237,8 @@ def collect_windows_prefetch():
     return entries
 
 
-# ---------------------------------------------------------------------------
-# Windows: ShimCache / AppCompatCache (raw capture only)
-# ---------------------------------------------------------------------------
-
 def collect_windows_shimcache_raw():
-    """AppCompatCache stores an ordered list of executed binaries with NTFS
-    update timestamps, but its binary layout varies by Windows version and
-    needs a dedicated parser (e.g. Mandiant's shimcache scripts / RECmd) to
-    decode properly. This captures the raw registry value length and the
-    key's last-write time so the evidence is preserved even if not decoded."""
+
     if winreg is None:
         return {"error": "winreg module unavailable (not running on Windows)"}
 
@@ -305,9 +266,6 @@ def collect_windows_shimcache_raw():
     }
 
 
-# ---------------------------------------------------------------------------
-# Windows: scheduled tasks + services (persistence / execution evidence)
-# ---------------------------------------------------------------------------
 
 def collect_windows_scheduled_tasks():
     stdout, err = run_command(["schtasks", "/query", "/fo", "csv", "/v"])
@@ -382,10 +340,6 @@ def collect_windows_executed_programs():
     }
 
 
-# ---------------------------------------------------------------------------
-# Linux: currently running processes
-# ---------------------------------------------------------------------------
-
 def collect_linux_processes():
     if psutil is not None:
         entries = []
@@ -408,7 +362,6 @@ def collect_linux_processes():
                 continue
         return [e for e in entries if is_genuine_linux_process(e)]
 
-    # Fallback: parse /proc directly.
     entries = []
     for pid_str in os.listdir("/proc"):
         if not pid_str.isdigit():
@@ -451,10 +404,6 @@ def collect_linux_processes():
     return entries
 
 
-# ---------------------------------------------------------------------------
-# Linux: cron jobs + systemd timers (persistence / scheduled execution)
-# ---------------------------------------------------------------------------
-
 def collect_linux_cron_jobs():
     entries = []
 
@@ -489,8 +438,7 @@ def collect_linux_cron_jobs():
         except PermissionError:
             entries.append({"source": spool_dir, "error": "Permission denied listing user crontabs"})
 
-    # Also try the current user's crontab via the crontab binary, which
-    # works without root for the invoking user's own jobs.
+
     stdout, err = run_command(["crontab", "-l"])
     if stdout:
         lines = [l.rstrip("\n") for l in stdout.splitlines() if l.strip() and not l.strip().startswith("#")]
@@ -506,7 +454,7 @@ def collect_linux_systemd_timers():
 
     entries = []
     lines = stdout.splitlines()
-    for line in lines[1:]:  # skip header
+    for line in lines[1:]:  
         stripped = line.strip()
         if not stripped or stripped.startswith("*") or "timers listed" in stripped:
             continue
@@ -516,9 +464,7 @@ def collect_linux_systemd_timers():
 
 
 def collect_linux_auditd_execve():
-    """If auditd is logging process execution (type=EXECVE / SYSCALL execve),
-    extract a best-effort summary of recently executed binaries. Requires
-    read access to /var/log/audit/audit.log (typically root only)."""
+
     log_path = "/var/log/audit/audit.log"
     if not os.path.isfile(log_path):
         return {"error": f"auditd log not found: {log_path} (auditd may not be installed/running)"}
@@ -545,10 +491,6 @@ def collect_linux_executed_programs():
         "auditd_execve": collect_linux_auditd_execve(),
     }
 
-
-# ---------------------------------------------------------------------------
-# Dispatch / evidence output
-# ---------------------------------------------------------------------------
 
 def collect_executed_programs(os_name):
     if os_name == "Windows":

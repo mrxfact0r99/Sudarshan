@@ -41,7 +41,6 @@ def read_via_pyperclip():
 
 
 def read_windows_native():
-    """Fallback using ctypes + Windows clipboard API (no extra install needed)."""
     try:
         import ctypes
         from ctypes import wintypes

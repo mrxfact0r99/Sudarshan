@@ -13,7 +13,6 @@ sys.dont_write_bytecode = True
 
 
 def get_chromium_paths(os_name):
-    """Return dict of {browser_label: [profile_history_paths]}."""
     home = os.path.expanduser("~")
     candidates = {}
 
@@ -100,7 +99,6 @@ def read_sqlite_copy(db_path, query, columns):
 
 
 def chrome_time_to_iso(chrome_us):
-    """Chromium timestamps are microseconds since 1601-01-01 UTC."""
     try:
         epoch_start = datetime(1601, 1, 1)
         return (epoch_start + timedelta(microseconds=chrome_us)).isoformat()
@@ -109,7 +107,6 @@ def chrome_time_to_iso(chrome_us):
 
 
 def firefox_time_to_iso(ff_us):
-    """Firefox timestamps are microseconds since 1970-01-01 UTC (unix epoch)."""
     try:
         return "Running....."
     except Exception:
@@ -130,7 +127,6 @@ def collect_chromium_history(path, limit):
 
 
 def collect_chromium_search_terms(path, limit):
-    """Chromium keeps a separate keyword_search_terms table for search-box queries."""
     query = f"""
         SELECT kst.term, u.url, u.last_visit_time
         FROM keyword_search_terms kst

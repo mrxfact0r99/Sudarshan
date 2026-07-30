@@ -11,7 +11,6 @@ from ..common import EVIDENCE_DIR, detect_os, ensure_evidence_dir
 
 
 def filetime_to_datetime(ft):
-    """Convert a Windows FILETIME (100-ns intervals since 1601-01-01) to datetime."""
     if not ft or ft <= 0:
         return None
     try:
@@ -21,7 +20,6 @@ def filetime_to_datetime(ft):
 
 
 def parse_index_file(path):
-    """Parse a Windows $I metadata file (supports legacy and Win10+ formats)."""
     with open(path, "rb") as f:
         data = f.read()
 

@@ -31,8 +31,6 @@ def save_evidence(payload, os_name):
 
 
 def run_powershell(script, timeout=90):
-    """Run a PowerShell command and return the CompletedProcess, or None if
-    powershell.exe isn't available (i.e. not Windows)."""
     try:
         return subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -89,9 +87,6 @@ def collect_windows_usb(minutes_back):
 
 
 def collect_usb_registry_history():
-    """Enumerate every USB mass-storage device that has ever been connected,
-    from the registry. Works without admin rights, no time window (registry
-    doesn't store a per-plug timestamp, only the last driver-install info)."""
     devices = []
     try:
         import winreg
@@ -141,8 +136,6 @@ def collect_usb_registry_history():
 
 
 def get_removable_drives():
-    """Return drive letters (e.g. ['D:']) for currently connected removable
-    (USB) drives."""
     drives = []
     ps_script = (
         "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=2\" "
@@ -190,9 +183,6 @@ USN_REASON_FLAGS = [
 
 
 def decode_usn_reason(reason_field):
-    """USN 'Reason' comes back either as a hex string (e.g. '0x00000102')
-    or already as comma-separated flag names depending on Windows/PowerShell
-    version. Handle both."""
     if reason_field is None:
         return []
     text = str(reason_field).strip()
@@ -206,12 +196,6 @@ def decode_usn_reason(reason_field):
 
 
 def collect_usb_write_operations(minutes_back):
-    """
-    Retroactive write/create/delete/rename history for connected removable
-    drives, read from the NTFS USN Journal (enabled by default, no setup
-    required). This does NOT capture reads -- the journal only tracks
-    changes, never plain reads.
-    """
     events = []
     note = None
 
@@ -292,11 +276,6 @@ def collect_usb_write_operations(minutes_back):
 
 
 def enable_read_write_auditing(drives):
-    """
-    One-time setup so that FUTURE reads and writes on the given drives get
-    logged as Security log event 4663. Cannot see anything that happened
-    before this runs. Requires admin.
-    """
     if not drives:
         return None
     if not is_admin():
@@ -324,12 +303,7 @@ def enable_read_write_auditing(drives):
 
 
 def collect_read_write_audit_events(minutes_back, drives):
-    """
-    Query event 4663 ('An attempt was made to access an object') from the
-    Security log and split out Read vs Write based on the Accesses field.
-    Only shows activity from AFTER auditing was enabled (see
-    enable_read_write_auditing). Requires admin.
-    """
+
     events = []
     note = None
 
@@ -390,15 +364,7 @@ def collect_read_write_audit_events(minutes_back, drives):
 
 
 def collect_windows_logins(minutes_back):
-    """
-    Login events (4624/4625/4634/4647) live in the Security log, which
-    Windows locks down to Administrators/SYSTEM by design -- a standard user
-    process will always get 0 results here, no matter how the query is
-    written. There is no way around this other than running elevated.
 
-    Note: enabling audit policy only affects LOGONS THAT HAPPEN AFTER you
-    enable it. It cannot retroactively produce events for past logins.
-    """
     events = []
     note = None
 

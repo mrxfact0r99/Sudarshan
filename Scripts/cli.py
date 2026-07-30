@@ -7,20 +7,16 @@ import runpy
 from io import StringIO
 import sys
 
-# Stop Python from writing __pycache__ in the first place. This must happen
-# before any of the collector modules get imported by runpy, so it's set
-# right at the top before anything else runs.
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 
 def clean_pycache(base="."):
-    """Actually remove any __pycache__ folders instead of just printing them."""
     for root, dirs, files in os.walk(base):
         if "__pycache__" in dirs:
             path = os.path.join(root, "__pycache__")
             shutil.rmtree(path, ignore_errors=True)
-            print(f"Removed {path}")
+        
 
 
 clean_pycache()
@@ -126,9 +122,7 @@ SPINNER_FRAMES = ["[|]", "[/]", "[-]", "[\\]"]
 
 
 def run_with_spinner(label, module_name):
-    """Run a collector module in the background while animating a rotating
-    spinner next to its label. The label only flips to a completed/failed
-    state once the module has actually finished, never on a fixed delay."""
+    
     box = {}
 
     def worker():
@@ -207,6 +201,8 @@ def run_single(choice):
     print(f"\nGoing For {label}.....\n")
     runpy.run_module(module_name, run_name="__main__")
     print("\nDone\n")
+   
+
 
 
 def main():
@@ -222,10 +218,10 @@ def main():
                 run_single(choice)
             except SystemExit:
                 pass
-            input("Press Enter to return to the menu...")
         elif choice == "99":
             run_full_triage()
-            input("Press Enter to return to the menu...")
+            print("\nExiting Sudarshan.....\n")
+            sys.exit(0)
         else:
             print("\nInvalid choice.\n")
             time.sleep(1)
