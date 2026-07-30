@@ -2,11 +2,22 @@ import os
 import json
 import platform
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..common import EVIDENCE_DIR, detect_os, ensure_evidence_dir
 
 MAX_EVENTS = 1000
+
+_SYSLOG_LEVEL_MAP = {
+    "0": "Emergency",
+    "1": "Alert",
+    "2": "Critical",
+    "3": "Error",
+    "4": "Warning",
+    "5": "Notice",
+    "6": "Information",
+    "7": "Debug",
+}
 
 
 def collect_windows_logs(max_events=MAX_EVENTS):
@@ -57,6 +68,45 @@ def collect_windows_logs(max_events=MAX_EVENTS):
 
     return logs
 
+
+def normalize_journal_entry(entry):
+    """Convert a raw journalctl JSON entry into the same schema used for
+    Windows events: TimeCreated, Id, LevelDisplayName, ProviderName, Message.
+    """
+    ts_raw = entry.get("__REALTIME_TIMESTAMP")
+    if ts_raw:
+        try:
+            ts = datetime.fromtimestamp(int(ts_raw) / 1_000_000, tz=timezone.utc)
+            time_created = ts.isoformat()
+        except (ValueError, TypeError, OverflowError):
+            time_created = str(ts_raw)
+    else:
+        time_created = entry.get("_SOURCE_REALTIME_TIMESTAMP", "")
+
+    return {
+        "TimeCreated": time_created,
+        "Id": entry.get("_PID") or entry.get("SYSLOG_PID") or "",
+        "LevelDisplayName": _SYSLOG_LEVEL_MAP.get(
+            str(entry.get("PRIORITY")), "Unknown"
+        ),
+        "ProviderName": entry.get("SYSLOG_IDENTIFIER") or entry.get("_COMM") or "unknown",
+        "Message": entry.get("MESSAGE", ""),
+    }
+
+
+def normalize_log_file_line(line, source_name):
+    """Wrap a plain-text log line (syslog/auth.log/etc.) into the same
+    schema as journalctl/Windows events, so it renders correctly downstream.
+    """
+    return {
+        "TimeCreated": "",
+        "Id": "",
+        "LevelDisplayName": "",
+        "ProviderName": source_name,
+        "Message": line,
+    }
+
+
 def collect_linux_logs(max_events=MAX_EVENTS):
     logs = {}
 
@@ -71,7 +121,8 @@ def collect_linux_logs(max_events=MAX_EVENTS):
             entries = []
             for line in result.stdout.strip().splitlines():
                 try:
-                    entries.append(json.loads(line))
+                    raw = json.loads(line)
+                    entries.append(normalize_journal_entry(raw))
                 except json.JSONDecodeError:
                     continue
             logs["journalctl"] = entries
@@ -94,21 +145,19 @@ def collect_linux_logs(max_events=MAX_EVENTS):
         "secure": "/var/log/secure",
         "kern_log": "/var/log/kern.log",
     }
-    file_logs = {}
+
     for name, path in log_files.items():
         if os.path.exists(path):
             try:
                 with open(path, "r", errors="replace") as f:
                     lines = f.readlines()[-max_events:]
-                file_logs[name] = [line.rstrip("\n") for line in lines]
+                logs[name] = [
+                    normalize_log_file_line(line.rstrip("\n"), name) for line in lines
+                ]
             except PermissionError:
-                file_logs[name] = {
-                    "error": f"Permission denied reading {path}. Try sudo."
-                }
+                logs[name] = {"error": f"Permission denied reading {path}. Try sudo."}
             except Exception as e:
-                file_logs[name] = {"error": str(e)}
-    if file_logs:
-        logs["log_files"] = file_logs
+                logs[name] = {"error": str(e)}
 
     return logs
 
