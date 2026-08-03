@@ -1,7 +1,9 @@
 import os
 import sys
 import json
+import shutil
 import struct
+import hashlib
 import platform
 import configparser
 import urllib.parse
@@ -207,6 +209,82 @@ def collect_recycle_bin(os_name):
         )
 
 
+def sha256_file(path):
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def unique_destination(recover_dir, desired_name):
+    dest = os.path.join(recover_dir, desired_name)
+    if not os.path.exists(dest):
+        return dest
+
+    base, ext = os.path.splitext(desired_name)
+    counter = 1
+    while True:
+        candidate = os.path.join(recover_dir, f"{base}_{counter}{ext}")
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
+
+
+def recover_files(entries):
+
+    if isinstance(entries, dict):
+        return entries
+
+    ensure_evidence_dir()
+    recover_dir = os.path.join(EVIDENCE_DIR, "recover")
+    os.makedirs(recover_dir, exist_ok=True)
+
+    recovered_count = 0
+
+    for entry in entries:
+        data_path = entry.get("data_file")
+        if not data_path or not entry.get("data_file_recoverable"):
+            continue
+
+     
+        original_name = entry.get("original_name")
+        if original_name:
+            desired_name = os.path.basename(original_name)
+        else:
+            desired_name = os.path.basename(data_path)
+
+     
+        sid_or_source = entry.get("sid") or entry.get("trash_source") or "src"
+        safe_prefix = "".join(c if c.isalnum() else "_" for c in str(sid_or_source))[:16]
+        desired_name = f"{safe_prefix}__{desired_name}" if desired_name else f"{safe_prefix}__recovered"
+
+        dest_path = unique_destination(recover_dir, desired_name)
+
+        try:
+            if os.path.isdir(data_path):
+                shutil.copytree(data_path, dest_path, symlinks=True)
+                entry["recovered_path"] = dest_path
+                entry["recovered_type"] = "directory"
+                entry["recovered_file_count"] = sum(len(f) for _, _, f in os.walk(dest_path))
+                recovered_count += 1
+            elif os.path.isfile(data_path):
+                shutil.copy2(data_path, dest_path)
+                entry["recovered_path"] = dest_path
+                entry["recovered_type"] = "file"
+                entry["recovered_sha256"] = sha256_file(dest_path)
+                recovered_count += 1
+            else:
+                entry["recover_error"] = "Data path exists but is neither a file nor a directory (broken link?)"
+        except (OSError, shutil.Error) as e:
+            entry["recover_error"] = str(e)
+
+    return entries, recovered_count
+
+
 def save_evidence(entries, os_name):
     ensure_evidence_dir()
     fname = os.path.join(EVIDENCE_DIR, "recycle_bin.json")
@@ -246,6 +324,15 @@ def main():
         print(f"[*] {recoverable} still have recoverable data on disk.")
         if errors:
             print(f"[!] {errors} record(s) had errors (see JSON for details).")
+
+        print("[*] Recovering files and folders into evidence 'recover' folder...")
+        entries, recovered_count = recover_files(entries)
+        recovered_dirs = sum(1 for e in entries if e.get("recovered_type") == "directory")
+        recovered_files = sum(1 for e in entries if e.get("recovered_type") == "file")
+        failed = sum(1 for e in entries if "recover_error" in e)
+        print(f"[+] Recovered {recovered_count} item(s): {recovered_files} file(s), {recovered_dirs} folder(s).")
+        if failed:
+            print(f"[!] {failed} item(s) failed to copy (see JSON for details).")
 
     fname = save_evidence(entries, os_name)
     print(f"[+] Evidence saved to: {fname}")
