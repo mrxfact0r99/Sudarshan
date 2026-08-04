@@ -793,8 +793,6 @@ def normalize_command_history(artifacts):
                     })
                     idx += 1
             else:
-                # Flat record shape - the block itself is one command/entry
-                # (e.g. a RunMRU key value, a typed path, a single history line).
                 cmd_text = str(first_present(block, ["command", "cmd", "value", "path", "entry"], ""))
                 if not cmd_text:
                     continue
