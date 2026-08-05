@@ -107,9 +107,13 @@ def chrome_time_to_iso(chrome_us):
 
 
 def firefox_time_to_iso(ff_us):
+    """Firefox's moz_places.last_visit_date is microseconds since the Unix
+    epoch (1970-01-01), unlike Chrome's WebKit epoch (1601-01-01)."""
+    if ff_us is None:
+        return None
     try:
-        return "Running....."
-    except Exception:
+        return datetime.fromtimestamp(ff_us / 1_000_000).isoformat()
+    except (OverflowError, OSError, ValueError, TypeError):
         return None
 
 

@@ -62,7 +62,7 @@ def run_module_captured(module_name):
 class CheckItem(tk.Frame):
     CHECKED = "\u2611"    
     UNCHECKED = "\u2610"  
-    def __init__(self, parent, text, variable, bg, fg, accent, font=("Segoe UI", 10),
+    def __init__(self, parent, text, variable, bg, fg, accent, font=("TkDefaultFont", 10),
                  command=None, **kwargs):
         super().__init__(parent, bg=bg, **kwargs)
         self.var = variable
@@ -70,8 +70,9 @@ class CheckItem(tk.Frame):
         self.fg = fg
         self.command = command
 
+        box_font = (font[0], 12) if isinstance(font, tuple) else font
         self.box_label = tk.Label(self, text=self._glyph(), bg=bg,
-                                   fg=self._color(), font=("Segoe UI", 12))
+                                   fg=self._color(), font=box_font)
         self.box_label.pack(side="left", padx=(0, 6))
 
         self.text_label = tk.Label(self, text=text, bg=bg, fg=fg, font=font)
@@ -106,18 +107,20 @@ class SudarshanGUI(tk.Tk):
     MUTED = "#8b8f9a"
     OK = "#3fbf6f"
     FAIL = "#e05252"
-    MONO = ("Consolas", 10)
 
     def __init__(self):
         super().__init__()
         self.title("Sudarshan - Rapid Digital Evidence Triage Toolkit")
         self.geometry("980x680")
-        try:
-            self.state("zoomed")           
-        except tk.TclError:
-            self.attributes("-zoomed", True)      
+        self._maximize()
         self.minsize(860, 600)
         self.configure(bg=self.BG)
+
+        # "Segoe UI"/"Consolas" only exist on Windows; on Linux/macOS Tk
+        # silently substitutes a generic font which looks inconsistent.
+        # Pick real cross-platform equivalents instead.
+        self.UI_FONT, self.MONO_FONT = self._pick_fonts()
+        self.MONO = (self.MONO_FONT, 10)
 
         self.log_queue = queue.Queue()
         self.worker_running = False
@@ -126,6 +129,40 @@ class SudarshanGUI(tk.Tk):
         self._build_style()
         self._build_layout()
         self.after(80, self._poll_queue)
+
+    def _maximize(self):
+        """Start maximized on any platform. 'zoomed' works on Windows; on
+        Linux/X11 not every window manager implements it (and some, like
+        minimal tiling WMs or a bare Xvfb display with no WM at all, raise
+        a TclError instead of ignoring it) -- so every attempt is guarded
+        and we fall back to sizing the window to the screen ourselves."""
+        try:
+            self.state("zoomed")
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.attributes("-zoomed", True)
+            return
+        except tk.TclError:
+            pass
+        try:
+            self.geometry(f"{self.winfo_screenwidth()}x{self.winfo_screenheight()}+0+0")
+        except tk.TclError:
+            pass
+
+    def _pick_fonts(self):
+        """Return (ui_font, mono_font) family names that actually exist on
+        this OS, so the GUI looks native instead of falling back silently."""
+        import tkinter.font as tkfont
+        available = set(tkfont.families())
+
+        ui_candidates = ["Segoe UI", "Ubuntu", "Cantarell", "DejaVu Sans", "Helvetica", "Arial"]
+        mono_candidates = ["Consolas", "Ubuntu Mono", "DejaVu Sans Mono", "Menlo", "Courier New"]
+
+        ui_font = next((f for f in ui_candidates if f in available), "TkDefaultFont")
+        mono_font = next((f for f in mono_candidates if f in available), "TkFixedFont")
+        return ui_font, mono_font
 
     def _build_style(self):
         style = ttk.Style(self)
@@ -137,23 +174,23 @@ class SudarshanGUI(tk.Tk):
         style.configure("TFrame", background=self.BG)
         style.configure("Panel.TFrame", background=self.PANEL)
         style.configure("TLabel", background=self.BG, foreground=self.FG,
-                         font=("Segoe UI", 10))
+                         font=(self.UI_FONT, 10))
         style.configure("Panel.TLabel", background=self.PANEL, foreground=self.FG,
-                         font=("Segoe UI", 10))
+                         font=(self.UI_FONT, 10))
         style.configure("Title.TLabel", background=self.BG, foreground=self.ACCENT,
-                         font=("Segoe UI", 18, "bold"))
+                         font=(self.UI_FONT, 18, "bold"))
         style.configure("Subtitle.TLabel", background=self.BG, foreground=self.MUTED,
-                         font=("Segoe UI", 10))
+                         font=(self.UI_FONT, 10))
         style.configure("Section.TLabel", background=self.PANEL, foreground=self.ACCENT,
-                         font=("Segoe UI", 11, "bold"))
+                         font=(self.UI_FONT, 11, "bold"))
         style.configure("TCheckbutton", background=self.PANEL, foreground=self.FG,
-                         font=("Segoe UI", 10))
+                         font=(self.UI_FONT, 10))
         style.map("TCheckbutton",
                   background=[("active", self.PANEL)],
                   foreground=[("disabled", self.MUTED)])
-        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"),
+        style.configure("Accent.TButton", font=(self.UI_FONT, 10, "bold"),
                          padding=8)
-        style.configure("TButton", font=("Segoe UI", 10), padding=6)
+        style.configure("TButton", font=(self.UI_FONT, 10), padding=6)
         style.configure("TProgressbar", troughcolor=self.PANEL,
                          background=self.ACCENT, thickness=10)
 
@@ -182,7 +219,8 @@ class SudarshanGUI(tk.Tk):
             var = tk.BooleanVar(value=False)
             self.check_vars[key] = var
             item = CheckItem(left, text=label, variable=var,
-                              bg=self.PANEL, fg=self.FG, accent=self.ACCENT)
+                              bg=self.PANEL, fg=self.FG, accent=self.ACCENT,
+                              font=(self.UI_FONT, 10))
             item.pack(anchor="w", padx=16, pady=3, fill="x")
             self.check_widgets[key] = item
 

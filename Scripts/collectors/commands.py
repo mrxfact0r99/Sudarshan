@@ -285,7 +285,14 @@ def collect_windows_runmru():
         if name == "MRUList":
             order = data
             continue
-        value = data.rstrip("\\1") if isinstance(data, str) else data
+        # RunMRU values end with a literal "\1" suffix marking the slot as
+        # most-recently-used; rstrip() strips a *set* of characters, not a
+        # substring, so it was mangling any path that happened to end in
+        # digits or backslashes (e.g. "...\Users\test1" -> "...\Users\test").
+        if isinstance(data, str) and data.endswith("\\1"):
+            value = data[:-2]
+        else:
+            value = data
         entries.append({
             "artifact": "run_mru",
             "slot": name,

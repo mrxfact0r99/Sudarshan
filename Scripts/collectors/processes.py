@@ -51,7 +51,12 @@ def collect_processes():
     for proc in psutil.process_iter():
         entry = {}
         for field in FIELDS:
-            if field == "create_time":
+            if field == "pid":
+                # proc.pid is a plain int attribute, not a method -- calling
+                # it like the other fields (getattr(proc, "pid")()) raises
+                # "'int' object is not callable" and corrupts every record.
+                entry["pid"] = proc.pid
+            elif field == "create_time":
                 entry["create_time"] = safe_get(proc, "create_time")
                 try:
                     ts = proc.create_time()
