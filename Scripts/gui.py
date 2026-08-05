@@ -112,7 +112,10 @@ class SudarshanGUI(tk.Tk):
         super().__init__()
         self.title("Sudarshan - Rapid Digital Evidence Triage Toolkit")
         self.geometry("980x680")
-        self.state("zoomed")   
+        try:
+            self.state("zoomed")           
+        except tk.TclError:
+            self.attributes("-zoomed", True)      
         self.minsize(860, 600)
         self.configure(bg=self.BG)
 
