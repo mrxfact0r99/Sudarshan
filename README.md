@@ -5,17 +5,17 @@ generating a PDF investigation report from them.
 
 ## Installation Process
 ```
-
 git clone https://github.com/mrxfact0r99/Sudarshan.git
 ```
+OR
+
+Download the zip file https://github.com/mrxfact0r99/Sudarshan.git and extract and open in terminal 
 
 ``` 
-
 cd Sudarshan
 ```
 
 ```
-
 pip3 install -r requirements.txt
 ```
 
