@@ -3,7 +3,23 @@ A lightweight, cross-platform (Windows / Linux) toolkit for
 quickly collecting common live-triage digital forensics artifacts and
 generating a PDF investigation report from them.
 
-## Running
+## Installation Process
+```
+
+git clone https://github.com/mrxfact0r99/Sudarshan.git
+```
+
+``` 
+
+cd Sudarshan
+```
+
+```
+
+pip3 install -r requirements.txt
+```
+
+## Run
 
 **Command line (original menu-driven mode):**
 ```

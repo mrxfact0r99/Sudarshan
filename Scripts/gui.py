@@ -115,10 +115,6 @@ class SudarshanGUI(tk.Tk):
         self._maximize()
         self.minsize(860, 600)
         self.configure(bg=self.BG)
-
-        # "Segoe UI"/"Consolas" only exist on Windows; on Linux/macOS Tk
-        # silently substitutes a generic font which looks inconsistent.
-        # Pick real cross-platform equivalents instead.
         self.UI_FONT, self.MONO_FONT = self._pick_fonts()
         self.MONO = (self.MONO_FONT, 10)
 
