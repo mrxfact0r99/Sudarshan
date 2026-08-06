@@ -531,6 +531,41 @@ def parse_dotnet_date(raw):
         return s
 
 
+LINUX_JOURNAL_LINE_RE = re.compile(r'^(\S+)\s+\S+\s+([^:\s][^:]*):\s*(.*)$')
+
+
+def parse_linux_raw_log_line(raw):
+    """Parse a `journalctl -o short-iso` line: '<iso-ts> <host> <provider>: <msg>'
+    (systemd-logind/kernel collectors emit this format). Returns
+    (timestamp_iso, provider, message); any of the three may be '' if the
+    line doesn't match this shape (e.g. a plain dmesg line with a relative
+    '[   2.345678]' boot-time prefix instead of a wall-clock timestamp)."""
+    if not raw:
+        return "", "", ""
+    text = raw.strip()
+    m = LINUX_JOURNAL_LINE_RE.match(text)
+    if not m:
+        return "", "", text
+    ts, provider, msg = m.groups()
+    if not re.match(r'^\d{4}-\d{2}-\d{2}T', ts):
+        return "", "", text
+    return ts, provider.strip(), msg.strip()
+
+
+def parse_last_wtmp_line(raw):
+    """Parse a `last -F` line, e.g.:
+    'mrxfactor pts/0 :0  Tue Aug 04 12:14:00 2026 - Tue Aug 04 12:16:00 2026  (00:02)'
+    Returns (username, tty_or_session, source). Login/logout timestamps are
+    left unparsed (free-text, ambiguous without locale-aware date parsing)."""
+    if not raw:
+        return "", "", ""
+    parts = raw.strip().split(None, 3)
+    username = parts[0] if len(parts) > 0 else ""
+    tty = parts[1] if len(parts) > 1 else ""
+    source = parts[2] if len(parts) > 2 else ""
+    return username, tty, source
+
+
 def extract_search_query(url):
     if not url:
         return None
@@ -638,7 +673,30 @@ def normalize_connection(rec):
     }
 
 
+WINDOWS_USB_EVENT_KEYS = ("friendly_name", "device_name", "name", "description",
+                          "vendor_id", "vid", "serial_number", "serial")
+
+
 def normalize_usb_event(rec, idx):
+    # Linux/macOS collectors (usb.py: collect_linux_usb / collect_macos_usb) emit
+    # raw kernel-log/unified-log lines as {"raw": "<line>"} instead of the
+    # structured Windows registry/event-log fields below - parse that shape
+    # here rather than falling through to "Unknown device" for every record.
+    raw_line = rec.get("raw")
+    if raw_line is not None and not any(k in rec for k in WINDOWS_USB_EVENT_KEYS):
+        ts, provider, msg = parse_linux_raw_log_line(raw_line)
+        return {
+            "id": f"USB-{idx}",
+            "device": msg or raw_line,
+            "vendor_id": "",
+            "product_id": "",
+            "serial": "",
+            "drive_letter": "",
+            "event_type": provider or "kernel",
+            "timestamp": ts,
+            "_raw": rec,
+        }
+
     return {
         "id": f"USB-{idx}",
         "device": str(first_present(rec, ["friendly_name", "device_name", "name", "description"], "Unknown device")),
@@ -680,7 +738,43 @@ def normalize_file_op_event(rec, idx, source_label):
     }
 
 
+WINDOWS_LOGIN_EVENT_KEYS = ("username", "user", "account", "event_id", "eventid")
+
+
 def normalize_login_event(rec, idx):
+    # Linux collector (usb.py: collect_linux_logins) emits {"source": "last(wtmp)"
+    # | "systemd-logind", "raw": "<line>"} - a shape with none of the structured
+    # Windows Security-log keys below, so every field used to come back blank.
+    raw_line = rec.get("raw")
+    if raw_line is not None and not any(k in rec for k in WINDOWS_LOGIN_EVENT_KEYS):
+        src = rec.get("source", "")
+        if src == "systemd-logind":
+            ts, provider, msg = parse_linux_raw_log_line(raw_line)
+            user_m = re.search(r'\buser\s+(\S+?)\.?$', msg) or re.search(r'\buser\s+(\S+)', msg)
+            username = user_m.group(1).rstrip(".") if user_m else ""
+            return {
+                "id": f"LOGIN-{idx}",
+                "username": username,
+                "event_id": "",
+                "logon_type": "session (systemd-logind)",
+                "source": "systemd-logind",
+                "success": "",
+                "timestamp": ts,
+                "_raw": rec,
+            }
+        else:  # "last(wtmp)" or unrecognized source
+            username, tty, source = parse_last_wtmp_line(raw_line)
+            return {
+                "id": f"LOGIN-{idx}",
+                "username": username,
+                "event_id": "",
+                "logon_type": tty,
+                "source": source or str(src),
+                "success": "",
+                "timestamp": "",  # embedded in trailing free-text date range on the raw line
+                "_raw": rec,
+            }
+
     return {
         "id": f"LOGIN-{idx}",
         "username": str(first_present(rec, ["username", "user", "account"], "")),
@@ -809,12 +903,67 @@ def normalize_command_history(artifacts):
     return entries
 
 
+def _flatten_linux_cron_jobs(records):
+    """execution.py: collect_linux_cron_jobs() returns one dict per crontab
+    FILE - {"source": path, "scope": ..., "entries": [line1, line2, ...]} -
+    not one dict per job, so the generic per-record loop below never even
+    saw individual jobs. Flatten to one record per cron line here."""
+    flat = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        entries = rec.get("entries")
+        if isinstance(entries, list):
+            src = str(rec.get("source", ""))
+            scope = str(rec.get("scope", ""))
+            user = scope[len("user:"):] if scope.startswith("user:") else ""
+            for line in entries:
+                flat.append({"name": str(line), "path": src, "user": user, "timestamp": ""})
+        elif "error" not in rec:
+            flat.append(rec)
+    return flat
+
+
+def _flatten_linux_systemd_timers(records):
+    """execution.py: collect_linux_systemd_timers() returns raw
+    `systemctl list-timers` rows as {"raw_line": "..."} with no structured
+    name/timestamp fields. Pull the .timer/.service unit names out of the
+    line so at least the timer and the service it triggers are visible."""
+    flat = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        raw = rec.get("raw_line")
+        if raw is None:
+            flat.append(rec)
+            continue
+        tokens = raw.split()
+        timer_units = [t for t in tokens if t.endswith(".timer")]
+        service_units = [t for t in tokens if t.endswith(".service")]
+        flat.append({
+            "name": timer_units[0] if timer_units else raw,
+            "path": service_units[0] if service_units else "",
+            "timestamp": "",
+            "_raw_line": raw,
+        })
+    return flat
+
+
+LINUX_EXEC_SOURCE_FLATTENERS = {
+    "cron_jobs": _flatten_linux_cron_jobs,
+    "systemd_timers": _flatten_linux_systemd_timers,
+}
+
+
 def normalize_executed_programs(artifacts):
     entries = []
     idx = 0
     for source, records in (artifacts or {}).items():
         if not isinstance(records, list):
             continue
+        flattener = LINUX_EXEC_SOURCE_FLATTENERS.get(source)
+        if flattener:
+            records = flattener(records)
         for rec in records:
             if not isinstance(rec, dict):
                 continue
