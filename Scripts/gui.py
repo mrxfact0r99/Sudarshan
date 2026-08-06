@@ -127,11 +127,6 @@ class SudarshanGUI(tk.Tk):
         self.after(80, self._poll_queue)
 
     def _maximize(self):
-        """Start maximized on any platform. 'zoomed' works on Windows; on
-        Linux/X11 not every window manager implements it (and some, like
-        minimal tiling WMs or a bare Xvfb display with no WM at all, raise
-        a TclError instead of ignoring it) -- so every attempt is guarded
-        and we fall back to sizing the window to the screen ourselves."""
         try:
             self.state("zoomed")
             return
@@ -148,8 +143,6 @@ class SudarshanGUI(tk.Tk):
             pass
 
     def _pick_fonts(self):
-        """Return (ui_font, mono_font) family names that actually exist on
-        this OS, so the GUI looks native instead of falling back silently."""
         import tkinter.font as tkfont
         available = set(tkfont.families())
 

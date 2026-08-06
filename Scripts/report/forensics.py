@@ -678,10 +678,6 @@ WINDOWS_USB_EVENT_KEYS = ("friendly_name", "device_name", "name", "description",
 
 
 def normalize_usb_event(rec, idx):
-    # Linux/macOS collectors (usb.py: collect_linux_usb / collect_macos_usb) emit
-    # raw kernel-log/unified-log lines as {"raw": "<line>"} instead of the
-    # structured Windows registry/event-log fields below - parse that shape
-    # here rather than falling through to "Unknown device" for every record.
     raw_line = rec.get("raw")
     if raw_line is not None and not any(k in rec for k in WINDOWS_USB_EVENT_KEYS):
         ts, provider, msg = parse_linux_raw_log_line(raw_line)
@@ -742,9 +738,6 @@ WINDOWS_LOGIN_EVENT_KEYS = ("username", "user", "account", "event_id", "eventid"
 
 
 def normalize_login_event(rec, idx):
-    # Linux collector (usb.py: collect_linux_logins) emits {"source": "last(wtmp)"
-    # | "systemd-logind", "raw": "<line>"} - a shape with none of the structured
-    # Windows Security-log keys below, so every field used to come back blank.
     raw_line = rec.get("raw")
     if raw_line is not None and not any(k in rec for k in WINDOWS_LOGIN_EVENT_KEYS):
         src = rec.get("source", "")
@@ -762,7 +755,7 @@ def normalize_login_event(rec, idx):
                 "timestamp": ts,
                 "_raw": rec,
             }
-        else:  # "last(wtmp)" or unrecognized source
+        else:  
             username, tty, source = parse_last_wtmp_line(raw_line)
             return {
                 "id": f"LOGIN-{idx}",
@@ -771,7 +764,7 @@ def normalize_login_event(rec, idx):
                 "logon_type": tty,
                 "source": source or str(src),
                 "success": "",
-                "timestamp": "",  # embedded in trailing free-text date range on the raw line
+                "timestamp": "",  
                 "_raw": rec,
             }
 
