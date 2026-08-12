@@ -141,7 +141,7 @@ def run_with_spinner(label, module_name):
 
     res = box["result"]
     mark = "[✓]" if res["success"] else "[✗]"
-    sys.__stdout__.write(f"\r{mark} {label}..... done ({res['elapsed']:.1f}s)\n")
+    sys.__stdout__.write(f"\r{mark} {label}..... Done ({res['elapsed']:.1f}s)\n")
     sys.__stdout__.flush()
     if not res["success"] and res["stderr"]:
         print(f"      error: {res['stderr'].strip()[:300]}")

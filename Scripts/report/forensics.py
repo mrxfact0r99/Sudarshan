@@ -393,8 +393,19 @@ def load_browser_json(path):
             continue
         browsers[name] = {
             "source_path": info.get("source_path", ""),
+            "portable": bool(info.get("portable")),
             "history_count": info.get("history_count", len(info.get("history", []) or [])),
             "history": info.get("history", []) or [],
+            "search_terms": info.get("search_terms", []) or [],
+            "downloads": info.get("downloads", []) or [],
+            "bookmarks": info.get("bookmarks", []) or [],
+            "cookies": info.get("cookies", []) or [],
+            "deleted_url_candidates": info.get("deleted_url_candidates", []) or [],
+            "deleted_url_candidates_count": info.get("deleted_url_candidates_count", 0),
+            "deleted_url_candidates_note": info.get("deleted_url_candidates_note"),
+            "deleted_cookie_candidates": info.get("deleted_cookie_candidates", []) or [],
+            "deleted_cookie_candidates_count": info.get("deleted_cookie_candidates_count", 0),
+            "deleted_cookie_candidates_note": info.get("deleted_cookie_candidates_note"),
         }
     return meta, browsers
 
@@ -427,7 +438,7 @@ def load_recycle_bin_json(path):
     }
 
 
-CLIPBOARD_TOP_KEYS = ("clipboard_content",)
+CLIPBOARD_TOP_KEYS = ("clipboard_content", "clipboard_history")
 
 
 def load_clipboard_json(path):
@@ -436,12 +447,26 @@ def load_clipboard_json(path):
 
     meta = {k: v for k, v in data.items() if k not in CLIPBOARD_TOP_KEYS}
     content = data.get("clipboard_content", "") or ""
+
+    history = []
+    for h in (data.get("clipboard_history") or []):
+        h_content = h.get("content") or ""
+        history.append({
+            "index": h.get("index"),
+            "content": h_content,
+            "content_length": h.get("content_length_chars", len(h_content)),
+            "note": h.get("note"),
+        })
+
     return {
         "meta": meta,
         "content": content,
         "content_length": data.get("content_length_chars", len(content)),
         "read_method": data.get("read_method", "") or "",
         "error": data.get("error"),
+        "history": history,
+        "history_source": data.get("clipboard_history_source"),
+        "history_error": data.get("clipboard_history_error"),
     }
 
 
@@ -677,6 +702,87 @@ WINDOWS_USB_EVENT_KEYS = ("friendly_name", "device_name", "name", "description",
                           "vendor_id", "vid", "serial_number", "serial")
 
 
+# --- Linux kernel-log USB event correlation ---------------------------------
+# The kernel logs a new device's identity (idVendor/idProduct, Product,
+# Manufacturer, SerialNumber) across several SEPARATE log lines, all sharing
+# a common "usb <bus>-<port>:" (or "usb usbN:") prefix. A naive line-by-line
+# view (grep for "usb") therefore mixes real per-device identity lines with
+# generic subsystem/driver/module-load boilerplate that fires on every boot
+# regardless of whether a suspicious device was ever attached (e.g.
+# "usbcore: registered new interface driver hub"). That boilerplate has no
+# device-identity fields to extract, which meant every single line - real
+# device or not - fell through to the "no vendor/product/serial captured"
+# branch below and was reported as "Medium" risk, flooding the USB section
+# with dozens of non-actionable findings. This groups lines by that shared
+# bus-port key into one consolidated device record per physical
+# attach/detach, so the existing has-identifier severity logic downstream
+# gets a fair chance to tell a fully-identified device (Low) apart from a
+# genuinely unidentified one (Medium) - exactly as it already does for
+# Windows. The raw evidence file itself is untouched; this is a report-time
+# correlation step only.
+LINUX_USB_BUS_PORT_RE = re.compile(r"\busb\s+([\w.:-]+):")
+LINUX_USB_IDS_RE = re.compile(r"idVendor=([0-9a-fA-F]{4}),\s*idProduct=([0-9a-fA-F]{4})")
+LINUX_USB_PRODUCT_RE = re.compile(r"\bProduct:\s*(.+)$")
+LINUX_USB_MANUFACTURER_RE = re.compile(r"\bManufacturer:\s*(.+)$")
+LINUX_USB_SERIAL_RE = re.compile(r"\bSerialNumber:\s*(.+)$")
+LINUX_USB_DISCONNECT_RE = re.compile(r"USB disconnect\b")
+
+
+def correlate_linux_usb_kernel_lines(raw_events):
+    """Turn a flat list of {'raw': <journalctl -k line>} dicts into
+    consolidated per-device records (see module note above). Returns
+    (device_dicts, boilerplate_count) where device_dicts is ready to pass
+    through normalize_usb_event()'s generic/Windows-shaped branch."""
+    devices = {}
+    order = []
+    boilerplate_count = 0
+
+    for rec in raw_events:
+        raw = rec.get("raw", "")
+        ts, _provider, msg = parse_linux_raw_log_line(raw)
+        key_match = LINUX_USB_BUS_PORT_RE.search(msg or raw)
+        if not key_match:
+            boilerplate_count += 1
+            continue
+        key = key_match.group(1)
+        dev = devices.get(key)
+        if dev is None:
+            dev = {"device_name": None, "manufacturer": None, "vendor_id": "",
+                   "product_id": "", "serial_number": "", "event_type": "connect",
+                   "timestamp": ts, "bus_port": key}
+            devices[key] = dev
+            order.append(key)
+
+        ids = LINUX_USB_IDS_RE.search(msg)
+        if ids:
+            dev["vendor_id"], dev["product_id"] = ids.groups()
+        product = LINUX_USB_PRODUCT_RE.search(msg)
+        if product:
+            dev["device_name"] = product.group(1).strip()
+        manufacturer = LINUX_USB_MANUFACTURER_RE.search(msg)
+        if manufacturer:
+            dev["manufacturer"] = manufacturer.group(1).strip()
+        serial = LINUX_USB_SERIAL_RE.search(msg)
+        if serial:
+            dev["serial_number"] = serial.group(1).strip()
+        if LINUX_USB_DISCONNECT_RE.search(msg):
+            dev["event_type"] = "disconnect"
+
+    device_dicts = []
+    for key in order:
+        dev = devices[key]
+        if dev["manufacturer"] and dev["device_name"]:
+            name = f"{dev['manufacturer']} {dev['device_name']}"
+        else:
+            name = dev["device_name"] or dev["manufacturer"] or f"USB device ({key})"
+        device_dicts.append({
+            "device_name": name, "vendor_id": dev["vendor_id"],
+            "product_id": dev["product_id"], "serial_number": dev["serial_number"],
+            "event_type": dev["event_type"], "timestamp": dev["timestamp"] or "",
+        })
+    return device_dicts, boilerplate_count
+
+
 def normalize_usb_event(rec, idx):
     raw_line = rec.get("raw")
     if raw_line is not None and not any(k in rec for k in WINDOWS_USB_EVENT_KEYS):
@@ -808,8 +914,14 @@ def parse_recycle_bin_timestamp(raw):
 
 
 def normalize_recycle_bin_item(rec, idx):
-    original_name = str(first_present(rec, ["original_name"], ""))
-    ext = os.path.splitext(original_name)[1].lower()
+    # Windows Recycle Bin records carry "original_name" (from the $I index
+    # file); Linux/macOS Trash records carry "original_path" (from the
+    # .trashinfo file) instead. Falling back to only the first of these
+    # meant every Linux/macOS Trash item rendered as "(unknown)" in the
+    # report and never matched the suspicious/sensitive-extension checks
+    # below, even though the collector had the real path all along.
+    original_name = str(first_present(rec, ["original_name", "original_path"], ""))
+    ext = os.path.splitext(os.path.basename(original_name))[1].lower()
     try:
         file_size = int(rec.get("file_size") or 0)
     except (TypeError, ValueError):
@@ -826,6 +938,10 @@ def normalize_recycle_bin_item(rec, idx):
         "deleted_time_dt": parse_recycle_bin_timestamp(rec.get("deleted_time")),
         "original_name": original_name,
         "extension": ext,
+        "recovered_path": str(first_present(rec, ["recovered_path"], "")),
+        "recovered_type": str(first_present(rec, ["recovered_type"], "")),
+        "recovered_sha256": str(first_present(rec, ["recovered_sha256"], "")),
+        "recover_error": str(first_present(rec, ["recover_error"], "")),
         "_raw": rec,
     }
 
@@ -838,6 +954,60 @@ def normalize_browser_entry(rec, browser_name, idx):
         "title": str(first_present(rec, ["title"], "")),
         "visit_count": first_present(rec, ["visit_count"], ""),
         "timestamp": str(first_present(rec, ["last_visit_time_iso", "last_visit_time"], "")),
+        "_raw": rec,
+    }
+
+
+def normalize_search_term_entry(rec, browser_name, idx):
+    return {
+        "id": f"SRCH-{idx}",
+        "browser": str(browser_name),
+        "term": str(first_present(rec, ["search_term"], "")),
+        "url": str(first_present(rec, ["url"], "")),
+        "timestamp": str(first_present(rec, ["last_visit_time_iso", "last_visit_time"], "")),
+        "_raw": rec,
+    }
+
+
+def normalize_download_entry(rec, browser_name, idx):
+    target_path = str(first_present(rec, ["target_path", "destination"], ""))
+    ext = os.path.splitext(os.path.basename(target_path))[1].lower()
+    return {
+        "id": f"DL-{idx}",
+        "browser": str(browser_name),
+        "target_path": target_path,
+        "extension": ext,
+        "source_url": str(first_present(rec, ["source_url"], "")),
+        "total_bytes": first_present(rec, ["total_bytes"], ""),
+        "timestamp": str(first_present(
+            rec, ["start_time_iso", "date_added_iso", "start_time", "date_added"], "")),
+        "_raw": rec,
+    }
+
+
+def normalize_bookmark_entry(rec, browser_name, idx):
+    return {
+        "id": f"BKMK-{idx}",
+        "browser": str(browser_name),
+        "name": str(first_present(rec, ["name"], "")),
+        "url": str(first_present(rec, ["url"], "")),
+        "folder": str(first_present(rec, ["folder"], "")),
+        "timestamp": str(first_present(rec, ["date_added_iso", "date_added"], "")),
+        "_raw": rec,
+    }
+
+
+def normalize_cookie_entry(rec, browser_name, idx):
+    return {
+        "id": f"CKY-{idx}",
+        "browser": str(browser_name),
+        "host": str(first_present(rec, ["host"], "")),
+        "name": str(first_present(rec, ["name"], "")),
+        "path": str(first_present(rec, ["path"], "")),
+        "creation_time": str(first_present(rec, ["creation_time_iso"], "")),
+        "expires_time": str(first_present(rec, ["expires_time_iso"], "")),
+        "is_secure": bool(rec.get("is_secure")),
+        "is_httponly": bool(rec.get("is_httponly")),
         "_raw": rec,
     }
 
@@ -990,6 +1160,8 @@ def normalize_executed_programs(artifacts):
 
 def analyze(processes, connections, usb_events, usb_note, login_events, login_note,
             event_logs=None, browser_entries=None,
+            search_term_entries=None, download_entries=None,
+            bookmark_entries=None, cookie_entries=None,
             usbstor_devices=None, usbstor_note="",
             file_write_events=None, file_write_note="", file_write_source="",
             file_audit_events=None, file_audit_note="", file_audit_source="",
@@ -1001,6 +1173,10 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             executed_program_entries=None, executed_programs_note=""):
     event_logs = event_logs or []
     browser_entries = browser_entries or []
+    search_term_entries = search_term_entries or []
+    download_entries = download_entries or []
+    bookmark_entries = bookmark_entries or []
+    cookie_entries = cookie_entries or []
     usbstor_devices = usbstor_devices or []
     file_write_events = file_write_events or []
     file_audit_events = file_audit_events or []
@@ -1210,6 +1386,32 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 "pid": p["pid"],
             })
 
+    if connections:
+        unresolved = sum(1 for c in connections if c["pid"] == "?")
+        if unresolved:
+            pct = round(100 * unresolved / len(connections))
+            if unresolved == len(connections):
+                detail = (f"PID/process could not be attributed for any of the "
+                           f"{len(connections)} connection(s) captured. On Linux/"
+                           f"macOS this requires root privileges (the collector "
+                           f"needs to read every process's socket table via /proc); "
+                           f"Windows requires Administrator for sockets owned by "
+                           f"other users. Section 4's Program/PID columns and "
+                           f"Section 8's process-network correlation are unreliable "
+                           f"for this collection - re-run the collector elevated "
+                           f"and regenerate the report for full attribution.")
+            else:
+                detail = (f"PID/process could not be attributed for {unresolved} of "
+                           f"{len(connections)} connection(s) ({pct}%) - likely "
+                           f"sockets owned by another user. Re-run the collector "
+                           f"elevated (root/Administrator) for full attribution.")
+            findings.append({
+                "severity": "Low", "target": "connection",
+                "category": "Collection gap - process attribution unavailable for network connections",
+                "detail": detail,
+                "pid": "?",
+            })
+
     for c in connections:
         raddr = c["raddr"]
         if raddr and not is_private_or_reserved(raddr):
@@ -1372,6 +1574,62 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
                 })
                 break
 
+    # Browser-recorded search terms (e.g. Chromium's keyword_search_terms
+    # table) are a distinct artifact from history/title text - the query
+    # the user actually typed survives here even in cases where the page
+    # title doesn't reflect it, so it gets its own keyword pass rather
+    # than being folded into the loop above.
+    for s in search_term_entries:
+        term_lc = s["term"].lower()
+        for kw in SUSPICIOUS_BROWSER_KEYWORDS:
+            if kw in term_lc:
+                findings.append({
+                    "severity": "High", "target": "browser",
+                    "category": "Suspicious recorded search term",
+                    "detail": f"{s['browser']} recorded search term '{s['term']}' matched "
+                              f"'{kw.strip()}' (URL: {s['url']}, {s['timestamp']}).",
+                    "pid": s["id"],
+                })
+                break
+
+    for d in download_entries:
+        if d["extension"] in SUSPICIOUS_DELETED_EXTENSIONS:
+            findings.append({
+                "severity": "Medium", "target": "browser",
+                "category": "Executable/script file downloaded via browser",
+                "detail": f"{d['browser']} downloaded '{d['target_path']}' "
+                          f"({d['extension']}) from {d['source_url']} at {d['timestamp']}.",
+                "pid": d["id"],
+            })
+        haystack = f"{d['target_path']} {d['source_url']}".lower()
+        for kw in SUSPICIOUS_BROWSER_KEYWORDS + SUSPICIOUS_KEYWORDS:
+            if kw in haystack:
+                findings.append({
+                    "severity": "High", "target": "browser",
+                    "category": "Suspicious browser download",
+                    "detail": f"{d['browser']} download '{d['target_path']}' from "
+                              f"{d['source_url']} matched '{kw.strip()}' ({d['timestamp']}).",
+                    "pid": d["id"],
+                })
+                break
+
+    if not search_term_entries and browser_entries:
+        findings.append({
+            "severity": "Info", "target": "browser",
+            "category": "Collection gap - no recorded search terms captured",
+            "detail": "Browser history was captured but no browser-recorded search terms "
+                      "were present (e.g. Chromium's keyword_search_terms table was empty "
+                      "or not applicable to this browser).",
+            "pid": "-",
+        })
+    if not download_entries and browser_entries:
+        findings.append({
+            "severity": "Info", "target": "browser",
+            "category": "Collection gap - no browser download records captured",
+            "detail": "Browser history was captured but no download records were present.",
+            "pid": "-",
+        })
+
     if not recycle_bin_items and not recycle_bin_error_items:
         findings.append({
             "severity": "Info", "target": "recyclebin",
@@ -1493,6 +1751,25 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
 
     clip_content = clipboard_data.get("content", "")
     clip_error = clipboard_data.get("error")
+    clip_history = clipboard_data.get("history") or []
+    history_error = clipboard_data.get("history_error")
+
+    # Build one list covering the current clipboard snapshot plus any
+    # recovered Clipboard History items, so every item gets scanned -
+    # not just whatever happened to be on the clipboard at collection time.
+    clip_items = []
+    if clip_content and clip_content.strip() and not clip_error:
+        clip_items.append({"label": "Current clipboard", "pid": "CLIP-CUR", "content": clip_content})
+    for h in clip_history:
+        h_content = (h.get("content") or "")
+        if h_content.strip():
+            idx = h.get("index")
+            clip_items.append({
+                "label": f"Clipboard History item #{idx if idx is not None else len(clip_items)}",
+                "pid": f"CLIP-H{idx if idx is not None else len(clip_items)}",
+                "content": h_content,
+            })
+
     if not clipboard_data:
         findings.append({
             "severity": "Info", "target": "clipboard",
@@ -1500,73 +1777,86 @@ def analyze(processes, connections, usb_events, usb_note, login_events, login_no
             "detail": "No clipboard export was present in the evidence file.",
             "pid": "-",
         })
-    elif clip_error:
-        findings.append({
-            "severity": "Info", "target": "clipboard",
-            "category": "Collection gap - clipboard could not be read",
-            "detail": f"Clipboard capture reported an error: {clip_error}",
-            "pid": "-",
-        })
-    elif not clip_content.strip():
-        findings.append({
-            "severity": "Info", "target": "clipboard",
-            "category": "Clipboard was empty at collection time",
-            "detail": "The clipboard export captured no text content (clipboard "
-                      "was empty, or held non-text data such as an image or file list).",
-            "pid": "-",
-        })
     else:
-        haystack = clip_content.lower()
-        matched_hints = [kw for kw in CLIPBOARD_KEYWORD_HINTS if kw in haystack]
-        if matched_hints:
-            shown = ", ".join(f"'{k.strip()}'" for k in matched_hints[:6])
-            findings.append({
-                "severity": "High", "target": "clipboard",
-                "category": "Clipboard contains credential-related keyword(s)",
-                "detail": (
-                    f"The clipboard contents matched keyword(s) commonly associated "
-                    f"with credentials or other sensitive data: {shown}. The clipboard "
-                    f"may have held a password, username, API key, or similar secret "
-                    f"at collection time - see the Clipboard Content Review section "
-                    f"for the full captured text."
-                ),
-                "pid": "CLIP-1",
-            })
-
-        for label, severity, pattern in CLIPBOARD_PATTERNS:
-            m = pattern.search(clip_content)
-            if m:
-                snippet = m.group(0)
-                if label == "Email address":
-                    redacted = snippet
-                else:
-                    redacted = snippet[:4] + "…" + snippet[-4:] if len(snippet) > 10 else "(redacted)"
-                findings.append({
-                    "severity": severity, "target": "clipboard",
-                    "category": f"Clipboard content matches pattern: {label}",
-                    "detail": (
-                        f"The clipboard contents matched a pattern consistent with "
-                        f"'{label}' (example match: {redacted}). This is a coarse "
-                        f"pattern-based heuristic and may include false positives - "
-                        f"verify against the full clipboard text in the Clipboard "
-                        f"Content Review section."
-                    ),
-                    "pid": "CLIP-1",
-                })
-
-        if not matched_hints and not any(p.search(clip_content) for _, _, p in CLIPBOARD_PATTERNS):
+        if clip_error:
             findings.append({
                 "severity": "Info", "target": "clipboard",
-                "category": "Clipboard content captured - no keyword/pattern match",
-                "detail": (
-                    f"Clipboard held {clipboard_data.get('content_length', len(clip_content))} "
-                    f"character(s) of text at collection time; no credential-related "
-                    f"keyword or sensitive-data pattern was matched by the automated "
-                    f"heuristics. Manual review is still recommended - see the Clipboard "
-                    f"Content Review section for the full text."
-                ),
+                "category": "Collection gap - current clipboard could not be read",
+                "detail": f"Clipboard capture reported an error: {clip_error}",
                 "pid": "-",
             })
+        if history_error:
+            findings.append({
+                "severity": "Info", "target": "clipboard",
+                "category": "Collection gap - Clipboard History could not be read",
+                "detail": f"Clipboard History capture reported: {history_error}",
+                "pid": "-",
+            })
+
+        if not clip_items:
+            findings.append({
+                "severity": "Info", "target": "clipboard",
+                "category": "Clipboard was empty at collection time",
+                "detail": "No text content was captured from the clipboard or from "
+                          "Clipboard History (clipboard was empty, held non-text data "
+                          "such as an image or file list, or history was unavailable/disabled).",
+                "pid": "-",
+            })
+
+        for item in clip_items:
+            content = item["content"]
+            haystack = content.lower()
+            matched_hints = [kw for kw in CLIPBOARD_KEYWORD_HINTS if kw in haystack]
+            item_had_finding = False
+            if matched_hints:
+                shown = ", ".join(f"'{k.strip()}'" for k in matched_hints[:6])
+                item_had_finding = True
+                findings.append({
+                    "severity": "High", "target": "clipboard",
+                    "category": f"{item['label']}: contains credential-related keyword(s)",
+                    "detail": (
+                        f"This clipboard item matched keyword(s) commonly associated "
+                        f"with credentials or other sensitive data: {shown}. It may "
+                        f"hold a password, username, API key, or similar secret - see "
+                        f"the Clipboard Content Review section for the full captured text."
+                    ),
+                    "pid": item["pid"],
+                })
+
+            for label, severity, pattern in CLIPBOARD_PATTERNS:
+                m = pattern.search(content)
+                if m:
+                    item_had_finding = True
+                    snippet = m.group(0)
+                    if label == "Email address":
+                        redacted = snippet
+                    else:
+                        redacted = snippet[:4] + "…" + snippet[-4:] if len(snippet) > 10 else "(redacted)"
+                    findings.append({
+                        "severity": severity, "target": "clipboard",
+                        "category": f"{item['label']}: matches pattern '{label}'",
+                        "detail": (
+                            f"This clipboard item matched a pattern consistent with "
+                            f"'{label}' (example match: {redacted}). This is a coarse "
+                            f"pattern-based heuristic and may include false positives - "
+                            f"verify against the full clipboard text in the Clipboard "
+                            f"Content Review section."
+                        ),
+                        "pid": item["pid"],
+                    })
+
+            if not item_had_finding:
+                findings.append({
+                    "severity": "Info", "target": "clipboard",
+                    "category": f"{item['label']}: captured - no keyword/pattern match",
+                    "detail": (
+                        f"This item held {len(content)} character(s) of text; no "
+                        f"credential-related keyword or sensitive-data pattern was "
+                        f"matched by the automated heuristics. Manual review is still "
+                        f"recommended - see the Clipboard Content Review section."
+                    ),
+                    "pid": "-",
+                })
 
     if not command_history_entries:
         findings.append({
@@ -1693,6 +1983,47 @@ def safe(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def break_long_tokens(text, max_run=60):
+    """
+    ReportLab's Paragraph can only wrap at whitespace. A single unbroken
+    run of non-whitespace longer than the column width - a long URL,
+    base64 blob, hash, JWT, or a password/passphrase with no spaces -
+    has no break point, which throws a Platypus layout error and can
+    crash PDF generation. Insert a zero-width space every `max_run`
+    characters inside any such run so it can still wrap. Purely a
+    layout aid - it doesn't change the underlying text content.
+    """
+    zwsp = "\u200b"
+    parts = re.split(r"(\s+)", text)
+    out = []
+    for part in parts:
+        if not part or part.isspace() or len(part) <= max_run:
+            out.append(part)
+        else:
+            out.append(zwsp.join(part[i:i + max_run] for i in range(0, len(part), max_run)))
+    return "".join(out)
+
+def chunk_text_for_table(text, max_chars=1800):
+    """
+    Split text into <=max_chars pieces so no single Table cell can ever be
+    taller than a page (which would crash Platypus - see note on the
+    clipboard section). Prefers breaking on whitespace near the boundary;
+    falls back to a hard cut if there's no whitespace to break on.
+    """
+    if not text:
+        return [""]
+    chunks = []
+    remaining = text
+    while len(remaining) > max_chars:
+        split_at = remaining.rfind(" ", 0, max_chars)
+        if split_at <= 0:
+            split_at = max_chars
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:].lstrip()
+    chunks.append(remaining)
+    return chunks
+
+
 def make_table(data, col_widths, header_bg=colors.HexColor("#1F2937")):
     t = Table(data, colWidths=col_widths, repeatRows=1)
     t.setStyle(TableStyle([
@@ -1719,6 +2050,8 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                   eventlog_path=None, eventlog_meta=None, event_logs=None,
                   browser_path=None, browser_meta=None, browsers=None,
                   browser_entries=None,
+                  search_term_entries=None, download_entries=None,
+                  bookmark_entries=None, cookie_entries=None,
                   usbstor_devices=None, usbstor_note="",
                   file_write_events=None, file_write_note="", file_write_source="",
                   file_audit_events=None, file_audit_note="", file_audit_source="",
@@ -1738,6 +2071,10 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
     browser_meta = browser_meta or {}
     browsers = browsers or {}
     browser_entries = browser_entries or []
+    search_term_entries = search_term_entries or []
+    download_entries = download_entries or []
+    bookmark_entries = bookmark_entries or []
+    cookie_entries = cookie_entries or []
     usbstor_devices = usbstor_devices or []
     file_write_events = file_write_events or []
     file_audit_events = file_audit_events or []
@@ -1919,7 +2256,17 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
          ["Total login events parsed", str(len(login_events))],
          ["Total Windows Event Log entries parsed", str(len(event_logs))],
          ["Total browser history entries parsed", str(len(browser_entries))],
+         ["Total browser-recorded search terms parsed", str(len(search_term_entries))],
+         ["Total browser downloads parsed", str(len(download_entries))],
+         ["Total bookmarks parsed", str(len(bookmark_entries))],
+         ["Total cookies parsed (metadata only)", str(len(cookie_entries))],
+         ["Recovered deleted URLs (browser history carving)",
+          str(sum(v.get("deleted_url_candidates_count", 0) for v in browsers.values()))],
+         ["Recovered deleted cookie hosts (cookie file carving)",
+          str(sum(v.get("deleted_cookie_candidates_count", 0) for v in browsers.values()))],
          ["Total Recycle Bin items parsed", str(len(recycle_bin_items))],
+         ["Recovered file copies (Recycle Bin/Trash)",
+          str(sum(1 for it in recycle_bin_items if it.get("recovered_path")))],
          ["Clipboard capture present", "Yes" if clipboard_data.get("content") else "No"],
          ["Total command history entries parsed", str(len(command_history_entries))],
          ["Total recently executed program entries parsed", str(len(executed_program_entries))],
@@ -2037,6 +2384,16 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
     story.extend(part_header("Digital Forensics Report — Network Connection Inventory (Part 3 of 11)"))
     story.append(Paragraph("4. Network Connection Inventory", h1))
     story.append(Spacer(1, 0.1 * inch))
+
+    unresolved_pid_count = sum(1 for c in connections if c["pid"] == "?")
+    if connections and unresolved_pid_count:
+        story.append(Paragraph(
+            f"<b>Note:</b> PID/process could not be attributed for "
+            f"{unresolved_pid_count} of {len(connections)} connection(s) below "
+            f"(shown as PID '?'). On Linux/macOS this requires root privileges; "
+            f"on Windows, Administrator for sockets owned by other users. "
+            f"Re-run the collector elevated for full attribution.", body))
+        story.append(Spacer(1, 0.08 * inch))
 
     net_rows = [["Risk", "PID", "Program", "Proto", "Local Addr:Port", "Remote Addr:Port", "State"]]
     for c in connections:
@@ -2259,22 +2616,221 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
     if browsers:
         profile_lines = ", ".join(
             f"{name} ({info.get('history_count', len(info.get('history', [])))} entries, "
-            f"source: {info.get('source_path', 'unknown')})"
+            f"source: {info.get('source_path', 'unknown')}"
+            f"{', PORTABLE/EXTRA-PATH' if info.get('portable') else ''})"
             for name, info in browsers.items()
         )
         story.append(Paragraph(f"Profiles captured: {safe(profile_lines)}", body))
     story.append(Spacer(1, 0.1 * inch))
 
-    if not browser_entries:
-        story.append(Paragraph("No browser history entries were present in the evidence file.", body))
-    else:
-        search_rows_data = []
+    # --- Derived data, computed up front so section render order below is free to vary ---
+    search_rows_data = []
+    flagged_entries = []
+    other_entries = []
+    if browser_entries:
         for b in browser_entries:
             q = extract_search_query(b["url"])
             if q:
                 search_rows_data.append((b, q))
+        flagged_web_ids = {f["pid"] for f in findings if f["target"] == "browser" and f["pid"] not in ("-", "?")}
+        flagged_entries = [b for b in browser_entries if b["id"] in flagged_web_ids]
+        other_entries = [b for b in browser_entries if b["id"] not in flagged_web_ids]
 
-        story.append(Paragraph(f"7.1 Search Engine Queries ({len(search_rows_data)})", h2))
+    deleted_candidates = []
+    carve_notes = []
+    for browser_name, info in browsers.items():
+        for c in info.get("deleted_url_candidates") or []:
+            deleted_candidates.append((browser_name, c))
+        note = info.get("deleted_url_candidates_note")
+        if note:
+            carve_notes.append(f"{browser_name}: {note}")
+
+    deleted_cookie_candidates = []
+    cookie_carve_notes = []
+    for browser_name, info in browsers.items():
+        for c in info.get("deleted_cookie_candidates") or []:
+            deleted_cookie_candidates.append((browser_name, c))
+        note = info.get("deleted_cookie_candidates_note")
+        if note:
+            cookie_carve_notes.append(f"{browser_name}: {note}")
+
+    # --- 7.1 Downloads ---
+    story.append(Paragraph(f"7.1 Downloads ({len(download_entries)})", h2))
+    if not download_entries:
+        story.append(Paragraph("No browser download records were present in the evidence file.", body))
+    else:
+        dl_flagged_ids = {f["pid"] for f in findings if f["target"] == "browser" and f["pid"].startswith("DL-")}
+        dl_rows = [["Browser", "Saved As", "Source URL", "Size", "When"]]
+        for d in download_entries:
+            flag = " [!]" if d["id"] in dl_flagged_ids else ""
+            dl_rows.append([
+                Paragraph(safe(d["browser"]) + flag, cell),
+                Paragraph(safe(d["target_path"])[:150], cell),
+                Paragraph(safe(d["source_url"])[:150], cell),
+                Paragraph(safe(d["total_bytes"]), cell),
+                Paragraph(safe(d["timestamp"]), cell),
+            ])
+        story.append(make_table(
+            dl_rows,
+            col_widths=[0.7 * inch, 2.0 * inch, 2.0 * inch, 0.6 * inch, 1.2 * inch]
+        ))
+        story.append(Paragraph(
+            "Rows marked with [!] matched an executable/script extension or a "
+            "suspicious keyword heuristic and are also listed in the Findings summary.",
+            small))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # --- 7.2 Bookmarks ---
+    story.append(Paragraph(f"7.2 Bookmarks ({len(bookmark_entries)})", h2))
+    if not bookmark_entries:
+        story.append(Paragraph("No bookmarks were present in the evidence file.", body))
+    else:
+        bk_rows = [["Browser", "Name", "URL", "Folder", "Added"]]
+        for bmk in bookmark_entries:
+            bk_rows.append([
+                Paragraph(safe(bmk["browser"]), cell),
+                Paragraph(safe(bmk["name"])[:120], cell),
+                Paragraph(safe(bmk["url"])[:180], cell),
+                Paragraph(safe(bmk["folder"])[:100], cell),
+                Paragraph(safe(bmk["timestamp"]), cell),
+            ])
+        story.append(make_table(
+            bk_rows,
+            col_widths=[0.7 * inch, 1.3 * inch, 2.2 * inch, 1.1 * inch, 1.2 * inch]
+        ))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # --- 7.3 Cookies ---
+    story.append(Paragraph(f"7.3 Cookies — Metadata Only ({len(cookie_entries)})", h2))
+    story.append(Paragraph(
+        "Cookie values are encrypted at rest by every modern browser using OS "
+        "user-profile keys, so only metadata (host, name, path, and timestamps) "
+        "is captured here - never decrypted values. This still shows exactly "
+        "which sites the profile held session state for, and when.", small))
+    if not cookie_entries:
+        story.append(Paragraph("No cookies were present in the evidence file.", body))
+    else:
+        ck_rows = [["Browser", "Host", "Name", "Path", "Created", "Expires"]]
+        for c in cookie_entries[:500]:
+            ck_rows.append([
+                Paragraph(safe(c["browser"]), cell),
+                Paragraph(safe(c["host"])[:100], cell),
+                Paragraph(safe(c["name"])[:80], cell),
+                Paragraph(safe(c["path"])[:60], cell),
+                Paragraph(safe(c["creation_time"]), cell),
+                Paragraph(safe(c["expires_time"]), cell),
+            ])
+        story.append(make_table(
+            ck_rows,
+            col_widths=[0.6 * inch, 1.5 * inch, 1.1 * inch, 0.8 * inch, 1.1 * inch, 1.1 * inch]
+        ))
+        if len(cookie_entries) > 500:
+            story.append(Paragraph(
+                f"Showing the first 500 of {len(cookie_entries)} cookies collected; "
+                "see the JSON evidence file for the full set.", small))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # --- 7.4 Recovered Deleted URLs ---
+    story.append(Paragraph(f"7.4 Recovered Deleted URLs ({len(deleted_candidates)})", h2))
+    if browsers:
+        story.append(Paragraph(
+            "SQLite does not zero out a row's bytes when it is deleted by "
+            "default - the space is simply marked free until something else "
+            "reuses it. The entries below were recovered by scanning each "
+            "history database's raw bytes - and its write-ahead-log (WAL) "
+            "sidecar file, when present, since a row can sit there before "
+            "being checkpointed into the main file - for URL-shaped text "
+            "that is not among the live rows above, and so are likely to "
+            "have been deleted from the visible history. This is a "
+            "byte-carving pass, not a full database parser, so treat each "
+            "match as a lead for manual review rather than a certainty - "
+            "it can be truncated, or include a few trailing bytes of an "
+            "adjacent field. No visit time or count is available for "
+            "carved rows, since that metadata lived in the same deleted "
+            "record structure as the URL.", small))
+        story.append(Spacer(1, 0.06 * inch))
+    if not deleted_candidates:
+        if browsers:
+            story.append(Paragraph(
+                "No likely-deleted URLs were recovered from the collected "
+                "history database file(s).", body))
+    else:
+        rec_rows = [["Browser", "Recovered URL", "Source", "Raw Context (±30 bytes)"]]
+        for browser_name, c in deleted_candidates:
+            rec_rows.append([
+                Paragraph(safe(browser_name), cell),
+                Paragraph(safe(c.get("url", ""))[:200], cell),
+                Paragraph(safe(c.get("source", "main DB file")), cell),
+                Paragraph(safe(c.get("context", ""))[:200], cell),
+            ])
+        story.append(make_table(
+            rec_rows,
+            col_widths=[0.8 * inch, 2.4 * inch, 0.8 * inch, 2.5 * inch]
+        ))
+    if carve_notes:
+        story.append(Spacer(1, 0.08 * inch))
+        story.append(Paragraph("Carving notes: " + "; ".join(safe(n) for n in carve_notes), small))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # --- 7.5 Recovered Deleted Cookie Hosts ---
+    story.append(Paragraph(f"7.5 Recovered Deleted Cookie Hosts ({len(deleted_cookie_candidates)})", h2))
+    story.append(Paragraph(
+        "Same byte-carving technique as 7.4, applied to the raw Cookies file instead "
+        "of History - surfaces hostnames the profile held cookies for that are no "
+        "longer present among the live cookie rows in 7.3, i.e. likely-deleted sites.",
+        small))
+    if not deleted_cookie_candidates:
+        if browsers:
+            story.append(Paragraph(
+                "No likely-deleted cookie hosts were recovered from the collected "
+                "cookie database file(s).", body))
+    else:
+        cc_rows = [["Browser", "Recovered Host/String", "Source", "Raw Context (±30 bytes)"]]
+        for browser_name, c in deleted_cookie_candidates:
+            cc_rows.append([
+                Paragraph(safe(browser_name), cell),
+                Paragraph(safe(c.get("url", ""))[:200], cell),
+                Paragraph(safe(c.get("source", "main DB file")), cell),
+                Paragraph(safe(c.get("context", ""))[:200], cell),
+            ])
+        story.append(make_table(
+            cc_rows,
+            col_widths=[0.8 * inch, 2.4 * inch, 0.8 * inch, 2.5 * inch]
+        ))
+    if cookie_carve_notes:
+        story.append(Spacer(1, 0.08 * inch))
+        story.append(Paragraph("Carving notes: " + "; ".join(safe(n) for n in cookie_carve_notes), small))
+    story.append(Spacer(1, 0.15 * inch))
+
+    # --- 7.6 All Browsing History ---
+    story.append(Paragraph(
+        f"7.6 All Browsing History ({len(other_entries)} additional entries not flagged below)", h2))
+    story.append(Paragraph(
+        "Every remaining history entry not already surfaced in 7.9 (Flagged History "
+        "Entries).", small))
+    if not other_entries:
+        story.append(Paragraph("No additional history entries to display.", body))
+    else:
+        hist_rows = [["Browser", "Title", "URL", "Visits", "Last Visited"]]
+        for b in other_entries:
+            hist_rows.append([
+                Paragraph(safe(b["browser"]), cell),
+                Paragraph(safe(b["title"])[:120], cell),
+                Paragraph(safe(b["url"])[:220], cell),
+                Paragraph(safe(b["visit_count"]), cell),
+                Paragraph(safe(b["timestamp"]), cell),
+            ])
+        story.append(make_table(
+            hist_rows,
+            col_widths=[0.8 * inch, 1.5 * inch, 2.6 * inch, 0.5 * inch, 1.1 * inch]
+        ))
+    story.append(Spacer(1, 0.15 * inch))
+
+    if not browser_entries:
+        story.append(Paragraph("No browser history entries were present in the evidence file.", body))
+    else:
+        # --- 7.7 Search Engine Queries ---
+        story.append(Paragraph(f"7.7 Search Engine Queries ({len(search_rows_data)})", h2))
         if not search_rows_data:
             story.append(Paragraph("No search-engine query strings were identified in the parsed URLs.", body))
         else:
@@ -2293,11 +2849,32 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
             ))
         story.append(Spacer(1, 0.15 * inch))
 
-        flagged_web_ids = {f["pid"] for f in findings if f["target"] == "browser" and f["pid"] not in ("-", "?")}
-        flagged_entries = [b for b in browser_entries if b["id"] in flagged_web_ids]
-        other_entries = [b for b in browser_entries if b["id"] not in flagged_web_ids]
+        # --- 7.8 Browser-Recorded Search Terms ---
+        story.append(Paragraph(f"7.8 Browser-Recorded Search Terms ({len(search_term_entries)})", h2))
+        story.append(Paragraph(
+            "Distinct from the URL-parsed queries above: these are terms the browser "
+            "itself recorded as having been typed into a search box (e.g. Chromium's "
+            "keyword_search_terms table), and can survive independently of the page "
+            "title text.", small))
+        if not search_term_entries:
+            story.append(Paragraph("No browser-recorded search terms were present in the evidence file.", body))
+        else:
+            st_rows = [["Browser", "Term", "URL", "Last Visited"]]
+            for s in search_term_entries:
+                st_rows.append([
+                    Paragraph(safe(s["browser"]), cell),
+                    Paragraph(safe(s["term"])[:150], cell),
+                    Paragraph(safe(s["url"])[:200], cell),
+                    Paragraph(safe(s["timestamp"]), cell),
+                ])
+            story.append(make_table(
+                st_rows,
+                col_widths=[0.9 * inch, 1.8 * inch, 2.4 * inch, 1.4 * inch]
+            ))
+        story.append(Spacer(1, 0.15 * inch))
 
-        story.append(Paragraph(f"7.2 Flagged History Entries ({len(flagged_entries)})", h2))
+        # --- 7.9 Flagged History Entries ---
+        story.append(Paragraph(f"7.9 Flagged History Entries ({len(flagged_entries)})", h2))
         if not flagged_entries:
             story.append(Paragraph("No individual history entries matched an automated heuristic.", body))
         else:
@@ -2318,31 +2895,27 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
             ))
         story.append(Spacer(1, 0.15 * inch))
 
-        story.append(Paragraph(
-            f"7.3 Full Browsing History ({len(other_entries)} additional entries not flagged above)", h2))
-        if not other_entries:
-            story.append(Paragraph("No additional history entries to display.", body))
-        else:
-            hist_rows = [["Browser", "Title", "URL", "Visits", "Last Visited"]]
-            for b in other_entries:
-                hist_rows.append([
-                    Paragraph(safe(b["browser"]), cell),
-                    Paragraph(safe(b["title"])[:120], cell),
-                    Paragraph(safe(b["url"])[:220], cell),
-                    Paragraph(safe(b["visit_count"]), cell),
-                    Paragraph(safe(b["timestamp"]), cell),
-                ])
-            story.append(make_table(
-                hist_rows,
-                col_widths=[0.8 * inch, 1.5 * inch, 2.6 * inch, 0.5 * inch, 1.1 * inch]
-            ))
-
     story = corr_story
     story.extend(part_header("Digital Forensics Report — Process-to-Network Correlation (Part 7 of 11)"))
     story.append(Paragraph("8. Process-to-Network Correlation", h1))
-    story.append(Paragraph(
-        "Grouped directly from the network-connection export, which carries its own "
-        "reliable PID and process-name fields for each connection.", body))
+    if unresolved_pid_count == len(connections) and connections:
+        story.append(Paragraph(
+            "<b>Note:</b> PID/process could not be attributed for any connection "
+            "in this collection (see Section 4) - typically because the "
+            "collector was not run with root/Administrator privileges. The "
+            "table below therefore cannot be broken out by process; it shows "
+            "every connection grouped under a single unresolved bucket. "
+            "Re-run the collector elevated and regenerate this report for a "
+            "genuine per-process breakdown.", body))
+    else:
+        story.append(Paragraph(
+            "Grouped directly from the network-connection export, which carries its own "
+            "reliable PID and process-name fields for each connection.", body))
+        if unresolved_pid_count:
+            story.append(Paragraph(
+                f"<b>Note:</b> {unresolved_pid_count} of {len(connections)} "
+                f"connection(s) could not be attributed to a process (grouped "
+                f"under PID '?') - see Section 4.", body))
     story.append(Spacer(1, 0.1 * inch))
 
     corr = build_network_correlation(connections)
@@ -2449,6 +3022,45 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
                 col_widths=[0.45 * inch, 1.85 * inch, 0.65 * inch, 1.05 * inch, 0.6 * inch, 0.85 * inch, 1.2 * inch]
             ))
 
+        story.append(Spacer(1, 0.15 * inch))
+        recovered_items = [it for it in recycle_bin_items if it.get("recovered_path")]
+        failed_items = [it for it in recycle_bin_items if it.get("recover_error")]
+        story.append(Paragraph(
+            f"9.4 Recovered File Copies ({len(recovered_items)} of {len(recycle_bin_items)})", h2))
+        if recycle_bin_items:
+            story.append(Paragraph(
+                "Where the underlying data for a deleted item was still present on disk "
+                "at collection time, a copy was preserved in the evidence 'recover' "
+                "folder before it could be overwritten by normal system activity. The "
+                "SHA-256 hash below is of that preserved copy and establishes chain of "
+                "custody for it; it is independent of the evidence-file hash on the "
+                "cover page.", small))
+            story.append(Spacer(1, 0.06 * inch))
+        if recovered_items:
+            rec_rows = [["Original Path/Name", "Recovered Copy Path", "Type", "SHA-256 (recovered file)"]]
+            for it in sorted(recovered_items, key=lambda it: it["deleted_time_dt"] or datetime.min, reverse=True):
+                rec_rows.append([
+                    Paragraph(safe(it["original_name"] or "(unknown)")[:160], cell),
+                    Paragraph(safe(it["recovered_path"])[:160], cell),
+                    Paragraph(safe(it["recovered_type"] or "file"), cell),
+                    Paragraph(safe(it["recovered_sha256"] or "n/a (directory)"), cell),
+                ])
+            story.append(make_table(
+                rec_rows,
+                col_widths=[2.1 * inch, 2.1 * inch, 0.55 * inch, 2.5 * inch]
+            ))
+        elif recycle_bin_items:
+            story.append(Paragraph(
+                "No underlying file data was recoverable from this evidence collection "
+                "- either nothing had been deleted, the data blocks had already been "
+                "reused/purged by the filesystem, or the Recycle Bin/Trash entries "
+                "pointed at files outside this collection's reach.", body))
+        if failed_items:
+            story.append(Spacer(1, 0.08 * inch))
+            story.append(Paragraph(f"{len(failed_items)} item(s) had recoverable data on disk but the "
+                                    f"copy attempt failed (see the evidence JSON's 'recover_error' field "
+                                    f"for each item's exact error).", small))
+
     story = clipboard_story
     story.extend(part_header("Digital Forensics Report — Clipboard Content Review (Part 9 of 11)"))
     story.append(Paragraph("10. Clipboard Content Review", h1))
@@ -2489,13 +3101,51 @@ def generate_pdf(output_dir, case_name, examiner, evidence_source,
             "the same sensitivity as any other credential/PII exposure in this report.",
             small))
         story.append(Spacer(1, 0.06 * inch))
-        if not clip_content.strip():
-            story.append(Paragraph("(Clipboard was empty, or held non-text content, at collection time.)", body))
+
+        clip_history = clipboard_data.get("history") or []
+        history_error = clipboard_data.get("history_error")
+        history_source = clipboard_data.get("history_source")
+
+        clip_items = []
+        if clip_content.strip():
+            clip_items.append(("Current clipboard (at collection time)", clip_content))
+        for h in clip_history:
+            h_content = (h.get("content") or "")
+            if h_content.strip():
+                idx = h.get("index")
+                pos = f"#{idx}" if idx is not None else str(len(clip_items))
+                clip_items.append((f"Clipboard History item {pos} (most-recent-first order)", h_content))
+            elif h.get("note"):
+                clip_items.append((f"Clipboard History item #{h.get('index')}", f"[not captured: {h['note']}]"))
+
+        if history_source:
+            story.append(Paragraph(
+                f"Clipboard History source: {safe(history_source)}. Note: Windows only "
+                f"retains history if the user has enabled Clipboard History (Win+V) - "
+                f"items copied before that setting was turned on cannot be recovered.",
+                small))
+            story.append(Spacer(1, 0.06 * inch))
+        elif history_error:
+            story.append(Paragraph(f"Clipboard History was not captured: {safe(history_error)}", small))
+            story.append(Spacer(1, 0.06 * inch))
+
+        if not clip_items:
+            story.append(Paragraph("(No text content was captured from the clipboard or Clipboard History "
+                                    "at collection time.)", body))
         else:
-            story.append(make_table(
-                [["Captured Clipboard Text"], [Paragraph(safe(clip_content), cell)]],
-                col_widths=[7.4 * inch],
-            ))
+            clip_rows = [["Item", "Content"]]
+            for title, text in clip_items:
+                text_chunks = chunk_text_for_table(text, max_chars=1800)
+                multi = len(text_chunks) > 1
+                for i, chunk in enumerate(text_chunks):
+                    label = safe(title)
+                    if multi:
+                        label += f" (part {i + 1}/{len(text_chunks)})"
+                    clip_rows.append([
+                        Paragraph(label, cell),
+                        Paragraph(safe(break_long_tokens(chunk)), cell),
+                    ])
+            story.append(make_table(clip_rows, col_widths=[1.8 * inch, 5.35 * inch]))
 
     story = cmdhist_story
     story.extend(part_header("Digital Forensics Report — Command History Review (Part 10 of 11)"))
@@ -2822,8 +3472,15 @@ def main():
             print(f"  Clipboard capture reported an error: {clipboard_data['error']}")
         else:
             print(f"  Clipboard content captured: {clipboard_data.get('content_length', 0)} character(s)")
+        history = clipboard_data.get("history") or []
+        history_text_count = len([h for h in history if (h.get("content") or "").strip()])
+        if history_text_count:
+            print(f"  Clipboard History items captured: {history_text_count} (of {len(history)} total)")
+        elif clipboard_data.get("history_error"):
+            print(f"  Clipboard History not captured: {clipboard_data['history_error']}")
     else:
-        clipboard_data = {"meta": {}, "content": "", "content_length": 0, "read_method": "", "error": None}
+        clipboard_data = {"meta": {}, "content": "", "content_length": 0, "read_method": "", "error": None,
+                           "history": [], "history_source": None, "history_error": None}
     clipboard_meta = clipboard_data["meta"]
 
     if command_history_path:
@@ -2859,7 +3516,23 @@ def main():
 
     processes = [normalize_process(r, i) for i, r in enumerate(raw_processes)]
     connections = [normalize_connection(r) for r in raw_connections]
-    usb_events = [normalize_usb_event(r, i) for i, r in enumerate(raw_usb_events)]
+    if raw_usb_events and raw_usb_events[0].get("raw") is not None and \
+            not any(k in raw_usb_events[0] for k in WINDOWS_USB_EVENT_KEYS):
+        # Linux kernel-log lines - correlate multi-line device descriptors
+        # into single records before normalizing (see the function's
+        # docstring for why: without this every boilerplate driver-init
+        # line was reported as an unidentified "Medium risk" USB event).
+        correlated_devices, boilerplate_count = correlate_linux_usb_kernel_lines(raw_usb_events)
+        usb_events = [normalize_usb_event(r, i) for i, r in enumerate(correlated_devices)]
+        if boilerplate_count:
+            ctx = (f"{boilerplate_count} additional kernel USB subsystem/driver-"
+                   f"initialization message(s) in this window carried no device "
+                   f"identity information (e.g. controller/hub/module "
+                   f"registration at boot) and are omitted from the table below "
+                   f"as not individually actionable.")
+            usb_note = f"{usb_note} {ctx}".strip() if usb_note else ctx
+    else:
+        usb_events = [normalize_usb_event(r, i) for i, r in enumerate(raw_usb_events)]
     login_events = [normalize_login_event(r, i) for i, r in enumerate(raw_login_events)]
     usbstor_devices = [normalize_usbstor_device(r, i) for i, r in enumerate(raw_usbstor_devices)]
     file_write_events = [normalize_file_op_event(r, i, file_write_source or "USN Journal")
@@ -2872,9 +3545,25 @@ def main():
         event_logs.extend(normalize_event_log(r, channel, i) for i, r in enumerate(entries))
 
     browser_entries = []
+    search_term_entries = []
+    download_entries = []
+    bookmark_entries = []
+    cookie_entries = []
     for browser_name, info in browsers.items():
         browser_entries.extend(
             normalize_browser_entry(r, browser_name, i) for i, r in enumerate(info.get("history", []))
+        )
+        search_term_entries.extend(
+            normalize_search_term_entry(r, browser_name, i) for i, r in enumerate(info.get("search_terms", []))
+        )
+        download_entries.extend(
+            normalize_download_entry(r, browser_name, i) for i, r in enumerate(info.get("downloads", []))
+        )
+        bookmark_entries.extend(
+            normalize_bookmark_entry(r, browser_name, i) for i, r in enumerate(info.get("bookmarks", []))
+        )
+        cookie_entries.extend(
+            normalize_cookie_entry(r, browser_name, i) for i, r in enumerate(info.get("cookies", []))
         )
 
     recycle_bin_items = [normalize_recycle_bin_item(r, i) for i, r in enumerate(raw_recycle_bin_items)]
@@ -2884,6 +3573,8 @@ def main():
 
     findings = analyze(processes, connections, usb_events, usb_note, login_events, login_note,
                         event_logs=event_logs, browser_entries=browser_entries,
+                        search_term_entries=search_term_entries, download_entries=download_entries,
+                        bookmark_entries=bookmark_entries, cookie_entries=cookie_entries,
                         usbstor_devices=usbstor_devices, usbstor_note=usbstor_note,
                         file_write_events=file_write_events, file_write_note=file_write_note,
                         file_write_source=file_write_source,
@@ -2928,6 +3619,10 @@ def main():
         browser_meta=browser_meta,
         browsers=browsers,
         browser_entries=browser_entries,
+        search_term_entries=search_term_entries,
+        download_entries=download_entries,
+        bookmark_entries=bookmark_entries,
+        cookie_entries=cookie_entries,
         usbstor_devices=usbstor_devices,
         usbstor_note=usbstor_note,
         file_write_events=file_write_events,
@@ -2965,6 +3660,10 @@ def main():
     print(f"File read/write audit events parsed: {len(file_audit_events)}")
     print(f"Event log entries parsed: {len(event_logs)}")
     print(f"Browser history entries parsed: {len(browser_entries)}")
+    print(f"Browser-recorded search terms parsed: {len(search_term_entries)}")
+    print(f"Browser downloads parsed: {len(download_entries)}")
+    print(f"Bookmarks parsed: {len(bookmark_entries)}")
+    print(f"Cookies parsed (metadata only): {len(cookie_entries)}")
     print(f"Recycle Bin items parsed: {len(recycle_bin_items)}")
     print(f"Clipboard content captured: {'Yes' if clipboard_data.get('content') else 'No'}")
     print(f"Command history entries parsed: {len(command_history_entries)}")

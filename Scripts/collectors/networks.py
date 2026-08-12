@@ -48,7 +48,7 @@ def collect_connections():
     return connections
 
 
-def save_evidence(connections, os_name):
+def save_evidence(connections, os_name, note=None):
     ensure_evidence_dir()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     fname = os.path.join(EVIDENCE_DIR, f"network_connections.json")
@@ -60,11 +60,23 @@ def save_evidence(connections, os_name):
         "total_connections": len(connections),
         "connections": connections,
     }
+    if note:
+        payload["note"] = note
 
     with open(fname, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
 
     return fname
+
+
+def is_root_or_admin():
+    try:
+        if platform.system() == "Windows":
+            import ctypes
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        return os.geteuid() == 0
+    except Exception:
+        return False
 
 
 def main():
@@ -75,7 +87,23 @@ def main():
     connections = collect_connections()
     print(f"[*] Found {len(connections)} connections.")
 
-    fname = save_evidence(connections, os_name)
+    note = None
+    unresolved = sum(1 for c in connections if c["pid"] is None)
+    if unresolved and not is_root_or_admin():
+        if unresolved == len(connections):
+            note = ("PID/process could not be resolved for ANY connection. On "
+                     "Linux/macOS this requires root privileges (psutil needs "
+                     "to read every process's /proc socket table); Windows "
+                     "requires Administrator for sockets owned by other users. "
+                     "Re-run with sudo/as Administrator for full attribution.")
+        else:
+            note = (f"PID/process could not be resolved for {unresolved} of "
+                     f"{len(connections)} connection(s), likely owned by "
+                     f"another user. Re-run with sudo/as Administrator for "
+                     f"full attribution.")
+        print(f"[!] Warning: {note}")
+
+    fname = save_evidence(connections, os_name, note)
     print(f"[+] Evidence saved to: {fname}")
 
 
