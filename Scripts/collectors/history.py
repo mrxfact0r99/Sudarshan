@@ -13,51 +13,15 @@ from ..common import EVIDENCE_DIR, detect_os, ensure_evidence_dir
 sys.dont_write_bytecode = True
 
 
-# --- Deleted-history recovery (string carving) --------------------------
-#
-# When a row is deleted from a SQLite table (e.g. Chrome/Firefox's
-# history), SQLite does NOT zero out the bytes by default - the page is
-# just returned to the file's freelist (or a "freeblock" gap inside a
-# still-used page) and left as-is until something else happens to reuse
-# that space. That means a deleted URL can often still be recovered by
-# scanning the raw file bytes for URL-shaped text, even though a normal
-# SQL query against the live tables can no longer see it.
-#
-# This is a lightweight, well-established technique (the same idea used
-# by tools like bulk_extractor/strings-based carving) - NOT a full SQLite
-# page/cell parser, so results are candidates for manual review rather
-# than certainties. A match can be a duplicate of a live row, a stale
-# but still-referenced value, or truncated at a page boundary.
 
 URL_CARVE_RE = re.compile(
     rb"https?://[A-Za-z0-9\-\._~:/\?#\[\]@!\$&'\(\)\*\+,;=%]{8,600}"
 )
-MAX_CARVE_BYTES = 64 * 1024 * 1024  # cap raw scan at 64MB per DB file
+MAX_CARVE_BYTES = 64 * 1024 * 1024  
 
 
 def get_freelist_diagnostics(db_path):
-    """Reports whether this SQLite file structurally *could* still hold
-    carvable deleted bytes at collection time - independent of whether the
-    regex actually found any. Answers the question 'why didn't a deletion
-    I just made show up?' without guessing:
 
-      - freelist_pages == 0 and auto_vacuum != 'none': the DB reclaims
-        free space automatically on every commit, so deleted rows are
-        wiped almost immediately - carving this file was never going to
-        find anything, no matter how fast the collector ran.
-      - freelist_pages == 0 and auto_vacuum == 'none': no free pages
-        exist right now, meaning either nothing has been deleted since
-        the last VACUUM, or every freed page has already been reused by
-        a newer write (very possible if browsing continued after the
-        deletion and before collection).
-      - freelist_pages > 0: there IS unallocated space in the file that
-        a plain SQL query can't see - a real chance for the regex scan to
-        find something in it (though it can still miss non-URL-shaped or
-        page-boundary-truncated remnants).
-
-    Returns a dict; page_size/page_count/freelist_pages are None if the
-    PRAGMA queries could not be run (e.g. file locked, not a SQLite file).
-    """
     info = {"auto_vacuum": None, "page_size": None, "page_count": None, "freelist_pages": None, "error": None}
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True)
@@ -78,9 +42,7 @@ def get_freelist_diagnostics(db_path):
 
 
 def carve_deleted_urls(db_path, known_urls, max_results=300):
-    """Scan the raw SQLite file bytes for URL-shaped strings not present
-    among the live rows already recovered by SQL, to surface likely
-    deleted history entries. Returns (results, error)."""
+
     try:
         size = os.path.getsize(db_path)
         with open(db_path, "rb") as f:
@@ -90,16 +52,7 @@ def carve_deleted_urls(db_path, known_urls, max_results=300):
 
     truncated = size > MAX_CARVE_BYTES
 
-    # SQLite's on-disk record format has no delimiter between adjacent
-    # text columns (e.g. a row's url and title sit back-to-back, lengths
-    # coming from a separate varint header) - so a URL regex match
-    # frequently swallows a few bytes of the *next* column's text too
-    # (e.g. "https://github.com/GitHub" for a row whose title is
-    # "GitHub"). That means a still-LIVE row's URL can appear to be a
-    # "new" string that isn't in known_urls verbatim, purely because of
-    # the trailing garbage. To avoid reporting live rows as false
-    # "recovered" deletions, a candidate is treated as already-known if
-    # any known URL is a *prefix* of it, not just on an exact match.
+
     known_sorted = sorted((u for u in known_urls if u), key=len, reverse=True)
 
     results = []
@@ -137,12 +90,7 @@ def carve_deleted_urls(db_path, known_urls, max_results=300):
 
 
 def carve_deleted_urls_with_wal(db_path, known_urls, max_results=300):
-    """SQLite's write-ahead-log file (<db>-wal) holds pages that have been
-    written but not yet checkpointed back into the main DB file - a row
-    deleted just before the WAL was captured can sit there even when the
-    main file's copy of that page has already been reused. Carving the
-    WAL alongside the main file catches that window without changing the
-    main-file carve behaviour at all."""
+
     results, note = carve_deleted_urls(db_path, known_urls, max_results)
     for r in results:
         r["source"] = "main DB file"
@@ -251,16 +199,7 @@ def get_firefox_paths(os_name):
 
 
 def get_tor_paths(os_name):
-    """Tor Browser is Firefox-based but ships as a self-contained,
-    typically-portable bundle rather than installing into a fixed OS
-    profile directory - so instead of one canonical path, this globs a
-    short list of common extraction/launch locations (Desktop, Downloads,
-    home directory, /opt on Linux, /Applications on macOS) for the
-    'TorBrowser/Data/Browser/profile.default/places.sqlite' layout that
-    the bundle always uses internally, regardless of where it was
-    extracted to. This is a best-effort convenience on top of --extra-path,
-    not a replacement for it - point --extra-path at the bundle directly
-    if it lives somewhere unusual (e.g. a USB drive)."""
+
     home = os.path.expanduser("~")
     if os_name == "Windows":
         search_roots = [
@@ -299,7 +238,6 @@ def get_tor_paths(os_name):
 
 
 def read_sqlite_copy(db_path, query, columns):
-    """Copy DB to a temp file (to dodge file locks) and run a query."""
     tmp_dir = tempfile.mkdtemp(prefix="browser_evidence_")
     tmp_path = os.path.join(tmp_dir, "copy.sqlite")
     rows_out = []
@@ -337,8 +275,7 @@ def chrome_time_to_iso(chrome_us):
 
 
 def firefox_time_to_iso(ff_us):
-    """Firefox's moz_places.last_visit_date is microseconds since the Unix
-    epoch (1970-01-01), unlike Chrome's WebKit epoch (1601-01-01)."""
+
     if ff_us is None:
         return None
     try:
@@ -348,11 +285,7 @@ def firefox_time_to_iso(ff_us):
 
 
 def collect_chromium_all_urls(path):
-    """Unlimited (no LIMIT/ORDER BY) fetch of every URL currently live in
-    the urls table. Used only to build the known-URL filter for carving -
-    collect_chromium_history() is capped by --limit for report readability,
-    but the carve filter needs to see every live row or it will wrongly
-    report live rows beyond that cap as 'deleted'."""
+
     rows, error = read_sqlite_copy(path, "SELECT url FROM urls", ["url"])
     return {r["url"] for r in rows if r.get("url")}, error
 
@@ -416,22 +349,6 @@ def collect_firefox_history(path, limit):
         r["last_visit_time_iso"] = firefox_time_to_iso(r["last_visit_date"])
     return rows, error
 
-
-# --- Downloads, bookmarks, cookies ---------------------------------------
-#
-# These three artifact types are called out repeatedly in the browser
-# forensics literature (search keywords, URLs, bookmarks, cookies, and
-# downloads are the artifacts most consistently recoverable across normal,
-# private, and portable browsing modes - see e.g. Chand, Sharma & Kabir,
-# "Advancing Web Browser Forensics", SN Computer Science 6:355, 2025).
-# Chromium's "History" SQLite file already holds a `downloads` table
-# alongside `urls`, so it costs nothing extra to pull once the DB is
-# copied. Bookmarks and cookies live in separate files per-browser.
-#
-# Cookie VALUES are encrypted at rest in every modern browser (tied to
-# OS user-profile keys), so only cookie metadata (host, name, path,
-# timestamps) is collected here - never the decrypted value.
-
 def collect_chromium_downloads(path, limit):
     query = f"""
         SELECT target_path, tab_url, total_bytes, start_time, end_time, state
@@ -449,8 +366,7 @@ def collect_chromium_downloads(path, limit):
 
 
 def collect_chromium_cookies_meta(root_dir):
-    """Chromium keeps cookies in a sibling 'Cookies' (or 'Network/Cookies'
-    on newer versions) file next to History, in the same profile folder."""
+
     profile_dir = os.path.dirname(root_dir)
     candidates = [
         os.path.join(profile_dir, "Cookies"),
@@ -476,13 +392,12 @@ def collect_chromium_cookies_meta(root_dir):
         r["creation_time_iso"] = chrome_time_to_iso(r["creation_utc"])
         r["last_access_time_iso"] = chrome_time_to_iso(r["last_access_utc"])
         r["expires_time_iso"] = chrome_time_to_iso(r["expires_utc"])
-        r.pop("value", None)  # never collect decrypted cookie values
+        r.pop("value", None)  
     return rows, cookies_path, error
 
 
 def collect_chromium_bookmarks(root_dir):
-    """Chromium bookmarks are a JSON tree in a 'Bookmarks' file that sits
-    next to History in the same profile folder (not SQLite)."""
+
     profile_dir = os.path.dirname(root_dir)
     bookmarks_path = os.path.join(profile_dir, "Bookmarks")
     if not os.path.isfile(bookmarks_path):
@@ -553,7 +468,6 @@ def collect_firefox_cookies_meta(profile_dir):
     for r in rows:
         r["creation_time_iso"] = firefox_time_to_iso(r["creation_utc"])
         r["last_access_time_iso"] = firefox_time_to_iso(r["last_access_utc"])
-        # expiry on moz_cookies is seconds (not microseconds) since epoch
         try:
             r["expires_time_iso"] = (
                 datetime.fromtimestamp(r["expires_utc"]).isoformat()
@@ -565,10 +479,7 @@ def collect_firefox_cookies_meta(profile_dir):
 
 
 def collect_firefox_downloads(profile_dir, places_path, limit):
-    """Modern Firefox has no separate downloads DB - completed/in-progress
-    downloads are recorded as page annotations on moz_places. This schema
-    has shifted across Firefox versions, so failures here are expected and
-    reported rather than raised."""
+
     query = f"""
         SELECT p.url AS source_url, a.content AS destination, a.dateAdded
         FROM moz_annos a
@@ -596,11 +507,7 @@ def save_evidence(payload, os_name):
 
 
 def find_extra_history_files(extra_paths):
-    """Given user-supplied roots (e.g. a mounted portable-browser folder or
-    a removable drive), glob for Chromium 'History' and Firefox
-    'places.sqlite' files anywhere under them. This lets the tool reach
-    portable installs, which live outside the standard per-OS profile
-    paths that get_chromium_paths/get_firefox_paths look in."""
+
     chromium_found, firefox_found = [], []
     for root in extra_paths or []:
         if not os.path.isdir(root):
@@ -656,15 +563,9 @@ def main():
 
             known_urls, known_urls_err = collect_chromium_all_urls(hist_path)
             if known_urls_err:
-                # Fall back to the capped set rather than treating every
-                # live row as "unknown"/deleted if the unlimited query fails.
                 known_urls = {r["url"] for r in history_rows if r.get("url")}
             carved, carve_err = carve_deleted_urls_with_wal(hist_path, known_urls)
 
-            # Cookie names/domains are recoverable from disk the same way
-            # deleted history rows are (see carve_deleted_urls docstring) -
-            # scan the raw Cookies file bytes too, treating any host that
-            # doesn't already show up in the live cookie rows as "carved".
             cookie_carved, cookie_carve_err = [], None
             if cookies_path and os.path.isfile(cookies_path):
                 known_hosts, known_hosts_err = collect_chromium_all_cookie_hosts(cookies_path)
@@ -717,9 +618,6 @@ def main():
         is_tor = family == "tor"
         portable = is_tor or places_path in extra_firefox
         if is_tor:
-            # profile.default is the same folder name for every Tor Browser
-            # bundle, so it's useless for telling multiple bundles apart -
-            # use the name of the folder the bundle was extracted into instead.
             bundle_marker = os.sep + "TorBrowser" + os.sep
             bundle_root = places_path.split(bundle_marker)[0] if bundle_marker in places_path else profile_dir
             key = f"Tor Browser ({os.path.basename(bundle_root)})"

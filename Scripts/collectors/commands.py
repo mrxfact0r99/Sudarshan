@@ -186,8 +186,7 @@ def collect_linux_command_history():
 
 
 def collect_powershell_history_for_profile(appdata_roaming, username):
-    """PSReadLine persists command history to a plain-text file shared by
-    Windows PowerShell 5.x and PowerShell 7.x (same host name, ConsoleHost)."""
+
     history_path = os.path.join(
         appdata_roaming, "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt"
     )

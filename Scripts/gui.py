@@ -24,7 +24,7 @@ COLLECTORS = [
     ("execution", "Scripts.collectors.execution", "Executed Programs"),
 ]
 
-REPORT_MODULE = "Scripts.report.forensics"
+REPORT_MODULE = "Scripts.report.report"
 
 
 def clean_pycache(base="."):
@@ -107,6 +107,9 @@ class SudarshanGUI(tk.Tk):
     MUTED = "#8b8f9a"
     OK = "#3fbf6f"
     FAIL = "#e05252"
+
+    CASE_NAME_PRESETS = ["Anonymous", "Custom..."]
+    EXAMINER_PRESETS = ["Anonymous", "Custom..."]
 
     def __init__(self):
         super().__init__()
@@ -196,12 +199,83 @@ class SudarshanGUI(tk.Tk):
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
 
-        left = ttk.Frame(body, style="Panel.TFrame")
-        left.grid(row=0, column=0, sticky="nsw", padx=(0, 14))
-        left.configure(width=300)
+        left_container = ttk.Frame(body, style="Panel.TFrame")
+        left_container.grid(row=0, column=0, sticky="nsw", padx=(0, 14))
+        left_container.configure(width=300)
+        left_container.grid_propagate(False)
+
+        left_canvas = tk.Canvas(left_container, bg=self.PANEL, highlightthickness=0,
+                                 width=300)
+        left_scroll = ttk.Scrollbar(left_container, orient="vertical",
+                                     command=left_canvas.yview)
+        left_canvas.configure(yscrollcommand=left_scroll.set)
+        left_canvas.pack(side="left", fill="both", expand=True)
+        left_scroll.pack(side="right", fill="y")
+
+        left = ttk.Frame(left_canvas, style="Panel.TFrame")
+        left_window = left_canvas.create_window((0, 0), window=left, anchor="nw")
+
+        def _on_left_configure(_event=None):
+            left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+        left.bind("<Configure>", _on_left_configure)
+
+        def _on_canvas_configure(event):
+            left_canvas.itemconfig(left_window, width=event.width)
+        left_canvas.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_wheel(_event=None):
+            left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            left_canvas.bind_all("<Button-4>", lambda e: left_canvas.yview_scroll(-1, "units"))
+            left_canvas.bind_all("<Button-5>", lambda e: left_canvas.yview_scroll(1, "units"))
+
+        def _unbind_wheel(_event=None):
+            left_canvas.unbind_all("<MouseWheel>")
+            left_canvas.unbind_all("<Button-4>")
+            left_canvas.unbind_all("<Button-5>")
+
+        left_canvas.bind("<Enter>", _bind_wheel)
+        left_canvas.bind("<Leave>", _unbind_wheel)
 
         pad = {"padx": 16, "pady": (14, 4)}
-        ttk.Label(left, text="COLLECTION MODULES", style="Section.TLabel").pack(anchor="w", **pad)
+
+        ttk.Label(left, text="🗂  CASE DETAILS", style="Section.TLabel").pack(anchor="w", **pad)
+
+        ttk.Label(left, text="Case No:", style="Panel.TLabel").pack(anchor="w", padx=16)
+        self.case_name_choice = tk.StringVar(value=self.CASE_NAME_PRESETS[0])
+        case_combo = ttk.Combobox(left, textvariable=self.case_name_choice,
+                                   values=self.CASE_NAME_PRESETS, state="readonly")
+        case_combo.pack(fill="x", padx=16, pady=(2, 4))
+        self.case_name_entry_var = tk.StringVar(value="")
+        self.case_name_entry = ttk.Entry(left, textvariable=self.case_name_entry_var,
+                                          state="disabled")
+        self.case_name_entry.pack(fill="x", padx=16, pady=(0, 1))
+        ttk.Label(left, text="e.g. CR-2026-001", style="Panel.TLabel",
+                  foreground=self.MUTED, font=(self.UI_FONT, 8)).pack(anchor="w", padx=17, pady=(0, 7))
+        case_combo.bind("<<ComboboxSelected>>",
+                         lambda e: self._toggle_custom_entry(self.case_name_choice,
+                                                              self.case_name_entry))
+
+        ttk.Label(left, text="Examiner Name:", style="Panel.TLabel").pack(anchor="w", padx=16)
+        self.examiner_choice = tk.StringVar(value=self.EXAMINER_PRESETS[0])
+        examiner_combo = ttk.Combobox(left, textvariable=self.examiner_choice,
+                                       values=self.EXAMINER_PRESETS, state="readonly")
+        examiner_combo.pack(fill="x", padx=16, pady=(2, 4))
+        self.examiner_entry_var = tk.StringVar(value="")
+        self.examiner_entry = ttk.Entry(left, textvariable=self.examiner_entry_var,
+                                         state="disabled")
+        self.examiner_entry.pack(fill="x", padx=16, pady=(0, 1))
+        ttk.Label(left, text="e.g. Utsavpari Gosai", style="Panel.TLabel",
+                  foreground=self.MUTED, font=(self.UI_FONT, 8)).pack(anchor="w", padx=17, pady=(0, 7))
+        examiner_combo.bind("<<ComboboxSelected>>",
+                             lambda e: self._toggle_custom_entry(self.examiner_choice,
+                                                                  self.examiner_entry))
+
+        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=16, pady=(4, 10))
+
+        ttk.Label(left, text="🧩  COLLECTION MODULES", style="Section.TLabel").pack(anchor="w", **pad)
 
         self.check_widgets = {}
         for key, module, label in COLLECTORS:
@@ -220,28 +294,29 @@ class SudarshanGUI(tk.Tk):
 
         ttk.Separator(left, orient="horizontal").pack(fill="x", padx=16, pady=14)
 
-        ttk.Label(left, text="EVIDENCE FOLDER", style="Section.TLabel").pack(anchor="w", padx=16)
+        self.run_selected_btn = ttk.Button(
+            left, text="▶  Run Selected Collectors",
+            command=lambda: self._start_run(full=False))
+        self.run_selected_btn.pack(fill="x", padx=16, pady=(4, 6))
+
+        self.gen_report_btn = ttk.Button(
+            left, text="📄  Generate Report", command=self._start_report_only)
+        self.gen_report_btn.pack(fill="x", padx=16, pady=(0, 6))
+
+        self.run_full_btn = ttk.Button(
+            left, text="⚡ Run Full Triage + Report ⚡", style="Accent.TButton",
+            command=lambda: self._start_run(full=True))
+        self.run_full_btn.pack(fill="x", padx=16, pady=(0, 16))
+
+        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=16, pady=14)
+
+        ttk.Label(left, text="📁  EVIDENCE FOLDER", style="Section.TLabel").pack(anchor="w", padx=16)
         self.evidence_dir_var = tk.StringVar(value=os.path.abspath("Evidences"))
         dir_row = ttk.Frame(left, style="Panel.TFrame")
         dir_row.pack(fill="x", padx=16, pady=(6, 4))
         ttk.Button(dir_row, text="Open Folder", command=self._open_evidence_folder).pack(side="left")
         ttk.Button(dir_row, text="Open Reports", command=self._open_report_folder).pack(side="left", padx=(6, 0))
 
-        ttk.Separator(left, orient="horizontal").pack(fill="x", padx=16, pady=14)
-
-        self.run_selected_btn = ttk.Button(
-            left, text="Run Selected Collectors",
-            command=lambda: self._start_run(full=False))
-        self.run_selected_btn.pack(fill="x", padx=16, pady=(4, 6))
-
-        self.run_full_btn = ttk.Button(
-            left, text="⚡ Run Full Triage + Report ⚡", style="Accent.TButton",
-            command=lambda: self._start_run(full=True))
-        self.run_full_btn.pack(fill="x", padx=16, pady=(0, 6))
-
-        self.gen_report_btn = ttk.Button(
-            left, text="Generate Report Only", command=self._start_report_only)
-        self.gen_report_btn.pack(fill="x", padx=16, pady=(0, 16))
 
         right = ttk.Frame(body, style="Panel.TFrame")
         right.grid(row=0, column=1, sticky="nsew")
@@ -274,13 +349,38 @@ class SudarshanGUI(tk.Tk):
         self.log_text.tag_config("head", foreground=self.ACCENT, font=("Consolas", 10, "bold"))
         self.log_text.configure(state="disabled")
 
-        self.progress = ttk.Progressbar(right, mode="determinate", maximum=100)
-        self.progress.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 16))
+        progress_row = ttk.Frame(right, style="Panel.TFrame")
+        progress_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 16))
+        progress_row.columnconfigure(0, weight=1)
+
+        self.progress = ttk.Progressbar(progress_row, mode="determinate", maximum=100)
+        self.progress.grid(row=0, column=0, sticky="ew")
+
+        self.progress_pct_var = tk.StringVar(value="0%")
+        ttk.Label(progress_row, textvariable=self.progress_pct_var, style="Panel.TLabel",
+                  width=5, anchor="e").grid(row=0, column=1, sticky="e", padx=(8, 0))
 
         footer = ttk.Frame(self, style="TFrame")
         footer.pack(fill="x", padx=20, pady=(0, 14))
         ttk.Label(footer, text="Cyber Crime Investigation Toolkit",
                   style="Subtitle.TLabel").pack(side="left")
+
+    def _toggle_custom_entry(self, choice_var, entry_widget):
+        if choice_var.get() == "Custom...":
+            entry_widget.configure(state="normal")
+            entry_widget.focus_set()
+        else:
+            entry_widget.configure(state="disabled")
+
+    def _get_case_name(self):
+        if self.case_name_choice.get() == "Custom...":
+            return self.case_name_entry_var.get().strip() or "Anonymous"
+        return self.case_name_choice.get()
+
+    def _get_examiner(self):
+        if self.examiner_choice.get() == "Custom...":
+            return self.examiner_entry_var.get().strip() or "Anonymous"
+        return self.examiner_choice.get()
 
     def _select_all(self):
         for key, v in self.check_vars.items():
@@ -333,6 +433,7 @@ class SudarshanGUI(tk.Tk):
                     self.status_var.set(payload)
                 elif kind == "progress":
                     self.progress["value"] = payload
+                    self.progress_pct_var.set(f"{int(payload)}%")
                 elif kind == "done":
                     self._set_buttons_enabled(True)
                     self.worker_running = False
@@ -354,6 +455,7 @@ class SudarshanGUI(tk.Tk):
         self.worker_running = True
         self._set_buttons_enabled(False)
         self.progress["value"] = 0
+        self.progress_pct_var.set("0%")
         thread = threading.Thread(
             target=self._worker_run, args=(selected, full), daemon=True)
         thread.start()
@@ -364,10 +466,13 @@ class SudarshanGUI(tk.Tk):
         self.worker_running = True
         self._set_buttons_enabled(False)
         self.progress["value"] = 0
+        self.progress_pct_var.set("0%")
         thread = threading.Thread(target=self._worker_report_only, daemon=True)
         thread.start()
 
     def _worker_run(self, modules, generate_report):
+        os.environ["SUDARSHAN_CASE_NAME"] = self._get_case_name()
+        os.environ["SUDARSHAN_EXAMINER"] = self._get_examiner()
         clean_pycache()
         total_steps = len(modules) + (1 if generate_report else 0)
         step = 0
@@ -417,6 +522,8 @@ class SudarshanGUI(tk.Tk):
         self.log_queue.put(("done", None))
 
     def _worker_report_only(self):
+        os.environ["SUDARSHAN_CASE_NAME"] = self._get_case_name()
+        os.environ["SUDARSHAN_EXAMINER"] = self._get_examiner()
         self.log_queue.put(("log", ("\n[*] Generating report from existing evidence ...", "info")))
         self.log_queue.put(("status", "Generating report..."))
         res = run_module_captured(REPORT_MODULE)

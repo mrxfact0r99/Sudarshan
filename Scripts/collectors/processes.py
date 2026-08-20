@@ -21,7 +21,6 @@ FIELDS = [
 
 
 def safe_get(proc, attr):
-    """Call proc.<attr>() or return a friendly error string instead of crashing."""
     try:
         value = getattr(proc, attr)()
         return serialize(value)
@@ -36,7 +35,6 @@ def safe_get(proc, attr):
 
 
 def serialize(value):
-    """Convert psutil named-tuples / lists of them into plain JSON-friendly data."""
     if isinstance(value, list):
         return [serialize(v) for v in value]
     if hasattr(value, "_asdict"):

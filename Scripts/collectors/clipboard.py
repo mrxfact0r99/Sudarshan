@@ -10,9 +10,6 @@ from datetime import datetime
 try:
     from ..common import detect_os
 except ImportError:
-    # Allows this file to still be run standalone (python clipboard.py)
-    # instead of only as part of the Scripts.collectors package, matching
-    # the fallback already used by commands.py and execution.py.
     sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
     from common import detect_os
 
@@ -41,20 +38,7 @@ def read_via_pyperclip():
 
 
 def read_windows_clipboard_history():
-    """
-    Reads Windows' built-in Clipboard History (Win+V) via the
-    Windows.ApplicationModel.DataTransfer.Clipboard WinRT API.
 
-    This only returns items if the user has turned the feature on
-    (Settings > System > Clipboard > Clipboard history) - it cannot
-    recover items copied before that setting was enabled, and it
-    cannot see items on other devices unless "Sync across devices"
-    is also on. Requires the 'winsdk' package (pip install winsdk).
-
-    Returns (items, source, error) where items is a list of dicts:
-        {"index": int, "content": str, "content_length_chars": int}
-    ordered most-recent-first, or (None, None, "<reason>") on failure.
-    """
     try:
         import asyncio
         from winsdk.windows.applicationmodel.datatransfer import (
@@ -117,17 +101,7 @@ def read_windows_clipboard_history():
 
 
 def read_linux_gpaste_history():
-    """
-    Reads clipboard history from GPaste (the GNOME clipboard manager),
-    via its 'gpaste-client' CLI. Only returns items if GPaste is installed
-    and its daemon has been tracking history on this system - it cannot
-    recover items copied before the daemon started, and has no visibility
-    into items on other machines.
 
-    Returns (items, error) where items is a list of dicts:
-        {"index": int, "content": str, "content_length_chars": int}
-    ordered most-recent-first, or (None, "<reason>") on failure.
-    """
     try:
         result = subprocess.run(
             ["gpaste-client", "history"],
@@ -141,9 +115,6 @@ def read_linux_gpaste_history():
     if result.returncode != 0:
         return None, (result.stderr.strip() or "gpaste-client history failed.")
 
-    # Each history entry starts with a line like "0. some text" - any
-    # following lines that don't match that pattern are continuation
-    # lines of the same (multi-line) clipboard entry.
     entry_start = re.compile(r"^(\d+)\.\s?(.*)$")
     items = []
     current = None
@@ -169,12 +140,7 @@ def read_linux_gpaste_history():
 
 
 def read_linux_copyq_history(max_items=50):
-    """
-    Reads clipboard history from CopyQ, via its 'copyq' CLI. Only returns
-    items if CopyQ is installed and running with its default tab populated -
-    capped at max_items to avoid a very long history making the collector
-    slow. Returns (items, error), same shape as read_linux_gpaste_history().
-    """
+
     try:
         size_result = subprocess.run(
             ["copyq", "size"], capture_output=True, text=True, timeout=10,
@@ -219,7 +185,6 @@ def read_linux_copyq_history(max_items=50):
 
 
 def read_linux_clipboard_history():
-    """Tries GPaste first, then CopyQ. Returns (items, source, error)."""
     items, err = read_linux_gpaste_history()
     if items is not None:
         return items, "gpaste_history_cli", None
@@ -236,17 +201,7 @@ def read_linux_clipboard_history():
 
 
 def read_macos_clipboard_history():
-    """
-    macOS has no built-in, always-on clipboard history equivalent to
-    Windows' Clipboard History or Linux's GPaste/CopyQ daemons - the
-    system pasteboard only ever holds the single most recent item.
-    Recovering prior items requires a specific third-party clipboard
-    manager (e.g. Maccy, Clipy, Pastebot) to already be installed and
-    running, and each stores its history in its own private, undocumented
-    format, so there is no single reliable way to read it here.
 
-    Returns (None, None, "<reason>") - always, by design.
-    """
     return None, None, (
         "macOS does not provide a built-in clipboard history API - only the "
         "current pasteboard item can be captured. Recovering prior items "

@@ -185,7 +185,7 @@ def run_full_triage():
             return
 
     t1 = time.time()
-    report_res = run_with_spinner("Generating Report", "Scripts.report.forensics")
+    report_res = run_with_spinner("Generating Report", "Scripts.report.report")
     report_time = time.time() - t1
 
     total = time.time() - run_start

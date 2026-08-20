@@ -70,9 +70,7 @@ def collect_windows_logs(max_events=MAX_EVENTS):
 
 
 def normalize_journal_entry(entry):
-    """Convert a raw journalctl JSON entry into the same schema used for
-    Windows events: TimeCreated, Id, LevelDisplayName, ProviderName, Message.
-    """
+
     ts_raw = entry.get("__REALTIME_TIMESTAMP")
     if ts_raw:
         try:
@@ -95,9 +93,7 @@ def normalize_journal_entry(entry):
 
 
 def normalize_log_file_line(line, source_name):
-    """Wrap a plain-text log line (syslog/auth.log/etc.) into the same
-    schema as journalctl/Windows events, so it renders correctly downstream.
-    """
+  
     return {
         "TimeCreated": "",
         "Id": "",
