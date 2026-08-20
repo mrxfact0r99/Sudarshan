@@ -9,7 +9,7 @@ git clone https://github.com/mrxfact0r99/Sudarshan.git
 ```
 OR
 
-Download the zip file https://github.com/mrxfact0r99/Sudarshan.git and extract and open in terminal 
+Download the zip file and after that extract and open in terminal 
 
 ``` 
 cd Sudarshan
