@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sudarshan EDR — {{ agent['hostname'] }}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0b0d12;
+      --surface:   #13161e;
+      --surface2:  #1a1e2a;
+      --border:    #252938;
+      --accent:    #ffb703;
+      --accent2:   #fb8500;
+      --blue:      #4895ef;
+      --green:     #36d399;
+      --red:       #f87171;
+      --yellow:    #fbbf24;
+      --muted:     #5c6380;
+      --text:      #dde1f0;
+      --text-soft: #9399b2;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Topbar ─────────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 28px;
+      height: 58px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar-logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    .breadcrumb a { color: var(--blue); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb-sep { color: var(--border); }
+    .breadcrumb-cur { color: var(--text); font-weight: 600; }
+
+    /* ── Main content ────────────────────────────── */
+    .main { padding: 28px; max-width: 1100px; margin: 0 auto; }
+
+    /* ── Agent info card ─────────────────────────── */
+    .agent-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .agent-avatar {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px;
+      flex-shrink: 0;
+    }
+    .agent-info { flex: 1; }
+    .agent-hostname {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .agent-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      font-size: 12.5px;
+      color: var(--text-soft);
+      margin-top: 6px;
+    }
+    .agent-meta span { display: flex; align-items: center; gap: 5px; }
+    .meta-label { color: var(--muted); }
+    code {
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      color: var(--accent);
+      background: var(--surface2);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* ── Section headers ─────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      margin-top: 28px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .7px;
+      color: var(--text-soft);
+    }
+
+    /* ── Status badge (Online/Offline) ───────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+    .badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+    .badge-online  { background: #0d2e1f; color: var(--green);  }
+    .badge-online::before  { background: var(--green);  box-shadow: 0 0 5px var(--green); }
+    .badge-offline { background: #2a0d0d; color: var(--red);   }
+    .badge-offline::before { background: var(--red);   }
+
+    /* ── Dashboard controls ──────────────────────── */
+    .control-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 22px;
+      margin-bottom: 24px;
+    }
+    .control-desc {
+      color: var(--text-soft);
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+    .control-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 14px;
+    }
+    .control-state {
+      padding: 7px 11px;
+      background: var(--surface2);
+      border-radius: 7px;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+    .control-action {
+      padding: 7px 12px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .control-action.success { color: var(--green); border-color: var(--green); }
+    .control-action.danger { color: var(--red); border-color: var(--red); }
+    .interval-control {
+      width: 90px;
+      padding: 7px 8px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    /* ── Artifacts grid ──────────────────────────── */
+    .artifact-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .artifact-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: background .12s;
+    }
+    .artifact-card:hover { background: var(--surface2); }
+    .artifact-card.missing { opacity: .45; }
+    .artifact-icon {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .artifact-icon.ok      { background: #0d2e1f; }
+    .artifact-icon.missing { background: var(--surface2); }
+    .artifact-body { flex: 1; min-width: 0; }
+    .artifact-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      text-transform: capitalize;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .artifact-time {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .artifact-link {
+      font-size: 11px;
+      color: var(--blue);
+      text-decoration: none;
+      padding: 3px 8px;
+      border: 1px solid var(--blue);
+      border-radius: 5px;
+      white-space: nowrap;
+      opacity: .7;
+    }
+    .artifact-link:hover { opacity: 1; }
+    .artifact-missing-label {
+      font-size: 11px;
+      color: var(--red);
+      margin-top: 2px;
+    }
+
+    /* ── Report section ──────────────────────────── */
+    .report-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 24px;
+    }
+    .report-desc {
+      font-size: 13px;
+      color: var(--text-soft);
+      margin-bottom: 16px;
+      line-height: 1.6;
+    }
+    .btn-generate {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: #000;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 10px 22px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-generate:hover { background: var(--accent2); }
+    .btn-generate:disabled { background: var(--muted); cursor: not-allowed; }
+    .btn-generate .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid rgba(0,0,0,.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* status area */
+    #report-status { margin-top: 14px; }
+    .status-msg {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-soft);
+    }
+    .status-msg.error { color: var(--red); }
+    .status-msg.done  { color: var(--green); }
+
+    /* PDF links list */
+    .pdf-list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .pdf-link-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-decoration: none;
+      color: var(--text);
+      font-size: 13px;
+      transition: background .12s, border-color .12s;
+    }
+    .pdf-link-card:hover { background: var(--border); border-color: var(--blue); }
+    .pdf-icon { font-size: 20px; flex-shrink: 0; }
+    .pdf-name { flex: 1; font-weight: 500; }
+    .pdf-open-label {
+      font-size: 11px;
+      color: var(--blue);
+      font-weight: 600;
+    }
+
+    /* ── Artifact icon map ───────────────────────── */
+  </style>
+</head>
+<body>
+
+<nav class="topbar">
+  <a class="topbar-logo" href="/">🛡 Sudarshan EDR</a>
+  <div class="breadcrumb">
+    <span class="breadcrumb-sep">›</span>
+    <a href="/">All Agents</a>
+    <span class="breadcrumb-sep">›</span>
+    <span class="breadcrumb-cur">{{ agent['hostname'] }}</span>
+  </div>
+  <a href="{{ url_for('logout') }}" style="margin-left:auto;color:var(--text-soft);font-size:13px;text-decoration:none;">⎋ Logout</a>
+</nav>
+
+<div class="main">
+
+  <!-- Agent info card -->
+  <div class="agent-card">
+    <div class="agent-avatar">
+      {% if 'windows' in agent['os_name']|lower %}💻
+      {% elif 'linux' in agent['os_name']|lower %}🐧
+      {% elif 'mac' in agent['os_name']|lower %}🍎
+      {% else %}🖥{% endif %}
+    </div>
+    <div class="agent-info">
+      <div class="agent-hostname">
+        {{ agent['hostname'] }}
+        <span class="badge" data-lastseen="{{ agent['last_seen'] }}" id="agent-online-badge"
+              style="margin-left:10px;vertical-align:middle;">Checking…</span>
+      </div>
+      <div class="agent-meta">
+        <span><span class="meta-label">OS:</span> {{ agent['os_name'] }}</span>
+        <span><span class="meta-label">Agent ID:</span> <code>{{ agent['agent_id'] }}</code></span>
+        <span><span class="meta-label">First seen:</span> {{ agent['first_seen'] | to_ist }}</span>
+        <span><span class="meta-label">Last seen:</span> {{ agent['last_seen'] | to_ist }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard agent controls -->
+  <div class="control-card">
+    <div>
+      <div class="section-title" style="margin-bottom:6px;">Agent Collection Control</div>
+      <div class="control-desc">
+        The endpoint agent stays connected and sends a heartbeat. Start/Stop below controls
+        telemetry collection; the interval is applied remotely by the agent.
+      </div>
+    </div>
+    <div class="control-row">
+      <span class="control-state" id="collection-state">
+        {% if agent['terminate_requested'] %}
+          Collection: Terminated
+        {% else %}
+          {{ 'Collection: Running' if agent['desired_running'] else 'Collection: Stopped' }}
+        {% endif %}
+      </span>
+      <button class="control-action {{ 'danger' if agent['desired_running'] else 'success' }}"
+              id="collection-btn"
+              onclick="toggleCollection()"
+              {{ 'disabled' if agent['terminate_requested'] else '' }}>
+        {{ 'Stop Collection' if agent['desired_running'] else 'Start Collection' }}
+      </button>
+      <input class="interval-control" id="interval-control"
+             type="number" min="10" max="86400" value="{{ agent['interval_seconds'] }}"
+             {{ 'disabled' if agent['terminate_requested'] else '' }}>
+      <button class="control-action" onclick="updateInterval()"
+              {{ 'disabled' if agent['terminate_requested'] else '' }}>Set Interval (sec)</button>
+      <button class="control-action danger" id="terminate-btn" onclick="terminateAgent()"
+              style="margin-left:auto;"
+              {{ 'disabled' if agent['terminate_requested'] else '' }}>
+        {{ 'Terminate Requested' if agent['terminate_requested'] else 'Terminate Agent' }}
+      </button>
+    </div>
+    <div class="control-desc" style="margin-top:10px;">
+      Terminate Agent fully exits the agent process on the endpoint (not just Stop Collection).
+      It's picked up on the agent's next heartbeat (usually within ~5s) and cannot be undone
+      remotely - someone has to start the agent again by hand on that machine.
+    </div>
+  </div>
+
+  {% set icon_map = {
+    'processes':  '⚙️',
+    'networks':   '🌐',
+    'usb':        '🔌',
+    'history':    '🌍',
+    'logs':       '📋',
+    'recycle':    '🗑️',
+    'clipboard':  '📋',
+    'commands':   '💻',
+    'execution':  '▶️'
+  } %}
+
+  <!-- Cycles -->
+  <div class="section-header">
+    <div class="section-title">
+      Collection Cycles
+      <span style="color:var(--green);margin-left:8px">{{ cycles|length }}</span>
+      <span style="color:var(--muted)">completed</span>
+    </div>
+  </div>
+
+  <p class="report-desc" style="margin-bottom:20px;">
+    Every collection cycle gets its own folder on disk, so nothing from an earlier cycle is
+    ever overwritten. A PDF report is generated <strong style="color:var(--text)">automatically</strong>
+    as soon as each cycle finishes uploading. Use "Regenerate" only if you want to rebuild a
+    cycle's report on demand.
+  </p>
+
+  {% if not cycles %}
+  <div class="report-box">
+    <p class="report-desc" style="margin-bottom:0;">No collection cycles yet - waiting for the agent's first cycle to complete.</p>
+  </div>
+  {% endif %}
+
+  {% for c in cycles %}
+  <div class="report-box" style="margin-bottom:16px;" id="cycle-box-{{ c['cycle'] }}">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <div class="section-title" style="margin:0;">
+        Cycle {{ c['cycle'] }}
+        <span style="color:var(--green);margin-left:8px;text-transform:none;letter-spacing:normal;font-weight:600;">
+          {{ c['artifacts']|length }}
+        </span>
+        <span style="color:var(--muted);text-transform:none;letter-spacing:normal;">
+          /{{ (c['artifacts']|length + c['missing_types']|length) }} artifacts
+        </span>
+      </div>
+      <button class="btn-generate" style="padding:7px 14px;font-size:12.5px;"
+              onclick="genReport({{ c['cycle'] }})" id="gen-btn-{{ c['cycle'] }}">
+        <div class="spinner" id="spinner-{{ c['cycle'] }}"></div>
+        <span id="gen-label-{{ c['cycle'] }}">{{ '⚡ Regenerate Report' if c['pdfs'] else '⚡ Generate Report' }}</span>
+      </button>
+    </div>
+
+    <div class="artifact-grid" style="margin-bottom:14px;">
+      {% for a in c['artifacts'] %}
+      {% set label = a['artifact_type'].rsplit('.', 1)[-1] %}
+      <div class="artifact-card">
+        <div class="artifact-icon ok">{{ icon_map.get(label, '📄') }}</div>
+        <div class="artifact-body">
+          <div class="artifact-name">{{ label | replace('_', ' ') | title }}</div>
+          <div class="artifact-time">{{ a['received_at'] | to_ist }}</div>
+        </div>
+        <a class="artifact-link"
+           href="/agent/{{ agent['agent_id'] }}/artifact/{{ c['cycle'] }}/{{ a['artifact_type'] }}"
+           target="_blank">JSON</a>
+      </div>
+      {% endfor %}
+
+      {% for t in c['missing_types'] %}
+      {% set label = t.rsplit('.', 1)[-1] %}
+      <div class="artifact-card missing">
+        <div class="artifact-icon missing" style="opacity:.4">{{ icon_map.get(label, '📄') }}</div>
+        <div class="artifact-body">
+          <div class="artifact-name" style="color:var(--muted)">{{ label | replace('_', ' ') | title }}</div>
+          <div class="artifact-missing-label">Not received</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div id="report-status-{{ c['cycle'] }}">
+      {% if c['pdfs'] %}
+      <div class="status-msg done">✓ Report:</div>
+      <div class="pdf-list" id="pdf-list-{{ c['cycle'] }}">
+        {% for f in c['pdfs'] %}
+        <a class="pdf-link-card"
+           href="/agent/{{ agent['agent_id'] }}/report/{{ c['cycle'] }}/{{ f | urlencode }}"
+           target="_blank">
+          <span class="pdf-icon">📄</span>
+          <span class="pdf-name">{{ f }}</span>
+          <span class="pdf-open-label">Open ↗</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="status-msg">⏳ Report not generated yet (it will build automatically once the cycle finishes, or click Generate above).</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+</div>
+
+<script>
+  const AGENT_PATH = window.location.pathname; // /agent/<id>
+
+  const AGENT_ID = "{{ agent['agent_id'] }}";
+  const AGENT_LAST_SEEN = "{{ agent['last_seen'] }}";
+  const AGENT_TERMINATED = {{ 'true' if agent['terminate_requested'] else 'false' }};
+  let collectionRunning = {{ 'true' if agent['desired_running'] else 'false' }};
+  let agentOnline = false;
+
+  function refreshOnlineStatus() {
+    const diffSec = (Date.now() - new Date(AGENT_LAST_SEEN)) / 1000;
+    agentOnline = diffSec < 15;
+
+    const badge = document.getElementById('agent-online-badge');
+    if (badge) {
+      badge.className = 'badge ' + (agentOnline ? 'badge-online' : 'badge-offline');
+      badge.textContent = agentOnline ? 'Online' : 'Offline';
+    }
+
+    // The button should reflect what's actually happening on the endpoint,
+    // not just the last command the dashboard sent. If it's Offline there
+    // is nothing running to stop, so show "Start Collection" even if
+    // desired_running is still 1 from before it went offline.
+    if (AGENT_TERMINATED) return; // terminate state already disables/labels the button server-side
+    const btn = document.getElementById('collection-btn');
+    const stateEl = document.getElementById('collection-state');
+    const showStop = agentOnline && collectionRunning;
+    btn.textContent = showStop ? 'Stop Collection' : 'Start Collection';
+    btn.className = 'control-action ' + (showStop ? 'danger' : 'success');
+    stateEl.textContent = agentOnline
+      ? (collectionRunning ? 'Collection: Running' : 'Collection: Stopped')
+      : 'Collection: Offline (not running)';
+  }
+
+  refreshOnlineStatus();
+  setInterval(refreshOnlineStatus, 3000);
+
+  async function postControl(payload) {
+    const resp = await fetch('/api/control/' + AGENT_ID, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Control request failed');
+    return data;
+  }
+
+  async function toggleCollection() {
+    const btn = document.getElementById('collection-btn');
+    // Base the action on what's actually displayed (which accounts for
+    // Offline), not the raw last-known desired_running value.
+    const currentlyShowingStop = agentOnline && collectionRunning;
+    btn.disabled = true;
+    try {
+      const data = await postControl({action: currentlyShowingStop ? 'stop' : 'start'});
+      collectionRunning = data.running;
+      refreshOnlineStatus();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function terminateAgent() {
+    const hostname = "{{ agent['hostname'] }}".replace(/"/g, '\\"');
+    const confirmed = confirm(
+      "Terminate the agent on \"" + hostname + "\"?\n\n" +
+      "This closes the agent process completely on that machine - not just " +
+      "Stop Collection. It cannot be reversed from this dashboard; the agent " +
+      "would need to be started again by hand on the endpoint."
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('terminate-btn');
+    btn.disabled = true;
+    btn.textContent = 'Terminating...';
+    try {
+      await postControl({action: 'terminate'});
+      document.getElementById('collection-state').textContent = 'Collection: Terminated';
+      btn.textContent = 'Terminate Requested';
+      document.getElementById('collection-btn').disabled = true;
+      document.getElementById('interval-control').disabled = true;
+      alert('Terminate command sent. The agent will exit on its next heartbeat (usually within ~5 seconds).');
+    } catch (e) {
+      alert(e.message);
+      btn.disabled = false;
+      btn.textContent = 'Terminate Agent';
+    }
+  }
+
+  async function updateInterval() {
+    const seconds = parseInt(document.getElementById('interval-control').value, 10);
+    if (!Number.isInteger(seconds) || seconds < 10 || seconds > 86400) {
+      alert('Interval must be between 10 and 86400 seconds.');
+      return;
+    }
+    try {
+      const data = await postControl({interval_seconds: seconds});
+      document.getElementById('interval-control').value = data.interval_seconds;
+      alert('Collection interval updated to ' + data.interval_seconds + ' seconds.');
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function genReport(cycle) {
+    const btn    = document.getElementById('gen-btn-' + cycle);
+    const lbl    = document.getElementById('gen-label-' + cycle);
+    const spin   = document.getElementById('spinner-' + cycle);
+    const status = document.getElementById('report-status-' + cycle);
+
+    btn.disabled = true;
+    spin.style.display = 'block';
+    lbl.textContent = 'Generating…';
+    status.innerHTML = '<div class="status-msg">⏳ Building PDFs for this cycle, please wait…</div>';
+
+    try {
+      const resp = await fetch(AGENT_PATH + '/report', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cycle: cycle})
+      });
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        status.innerHTML = `<div class="status-msg error">✗ Error: ${data.error || 'Unknown error'}</div>`;
+        return;
+      }
+
+      // Build PDF link cards
+      const listHtml = data.files.map(f => `
+        <a class="pdf-link-card"
+           href="${AGENT_PATH}/report/${cycle}/${encodeURIComponent(f)}"
+           target="_blank">
+          <span class="pdf-icon">📄</span>
+          <span class="pdf-name">${f}</span>
+          <span class="pdf-open-label">Open ↗</span>
+        </a>
+      `).join('');
+
+      status.innerHTML = `
+        <div class="status-msg done">✓ Report:</div>
+        <div class="pdf-list">${listHtml}</div>
+      `;
+    } catch (e) {
+      status.innerHTML = `<div class="status-msg error">✗ Request failed: ${e}</div>`;
+    } finally {
+      btn.disabled = false;
+      spin.style.display = 'none';
+      lbl.textContent = '⚡ Regenerate Report';
+    }
+  }  // Keep last_seen (and therefore the Online/Offline + Start/Stop button)
+  // fresh without the user having to manually refresh the page.
+  setTimeout(() => location.reload(), 10000);
+</script>
+</body>
+</html>

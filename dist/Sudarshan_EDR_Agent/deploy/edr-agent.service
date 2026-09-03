@@ -1,0 +1,38 @@
+# Sudarshan EDR - Linux agent unit.
+#
+# Running as root (the default when no User= line is set, or explicit
+# User=root below) is what makes "only root can kill it" true: Linux's
+# kernel signal-delivery check in kill(2) only allows a signal through if
+# the sender's UID matches the target's UID, or the sender is root/has
+# CAP_KILL. A normal user's `kill <pid>` / `kill -9 <pid>` / `killall`
+# against a root-owned process returns EPERM ("Operation not permitted") -
+# no application-level code can override this, it's enforced by the kernel.
+#
+# Install:
+#   sudo cp deploy/edr-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now edr-agent
+#
+# Only root (sudo) can stop it:
+#   sudo systemctl stop edr-agent
+
+[Unit]
+Description=Sudarshan EDR Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/sudarshan-edr
+ExecStart=/usr/bin/python3 -m edr.agent --server http://ServerIP:8443
+Restart=on-failure
+RestartSec=5
+# Belt-and-braces: even if something tricked it into running as a normal
+# user, refuse SIGTERM/SIGINT from anyone but init/root delivering a
+# genuine stop -- systemd itself is what sends the stop signal on
+# `systemctl stop`, and only root/sudo can invoke that.
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
