@@ -1,0 +1,2358 @@
+{
+  "generated_at": "2026-09-29T11:24:42.482348",
+  "detected_os": "Windows",
+  "hostname": "♾-PINAK-♾",
+  "total_connections": 235,
+  "connections": [
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:53804",
+      "remote_address": "64:ff9b::226b:f35d:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56440",
+      "remote_address": "69.197.188.194:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:49668",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 5056,
+      "process_name": "spoolsv.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56392",
+      "remote_address": "104.85.148.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.44.128.55:55669",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56338",
+      "remote_address": "104.85.148.121:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56421",
+      "remote_address": "40.79.141.156:443",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56444",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56459",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56493",
+      "remote_address": "20.52.64.202:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.37.2:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:50846",
+      "remote_address": "64:ff9b::8c52:7119:443",
+      "status": "ESTABLISHED",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56498",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:902",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 6596,
+      "process_name": "vmware-authd.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::9b7a:e947:809:1166:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::9667:a0af:efd4:d1e:55339",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56463",
+      "remote_address": "13.107.246.68:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56413",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:56382",
+      "remote_address": "64:ff9b::d6b:d5d:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56353",
+      "remote_address": "52.98.123.226:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::9b7a:e947:809:1166:55343",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56430",
+      "remote_address": "49.44.130.18:443",
+      "status": "CLOSE_WAIT",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56368",
+      "remote_address": "192.178.158.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::708b:7c0b:1b66:df04:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::5353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6924,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56465",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56433",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56365",
+      "remote_address": "172.217.118.4:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.37.2:138",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::445",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56427",
+      "remote_address": "49.44.130.18:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::500",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 5636,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:56642",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:50776",
+      "remote_address": "51.8.64.151:443",
+      "status": "CLOSE_WAIT",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:50272",
+      "remote_address": "2404:6800:4013:813::bc:443",
+      "status": "ESTABLISHED",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:5050",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 12136,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.56.1:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56432",
+      "remote_address": "49.44.130.18:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:60022",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56417",
+      "remote_address": "204.79.197.203:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:55405",
+      "remote_address": "64:ff9b::dca:dced:443",
+      "status": "ESTABLISHED",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56397",
+      "remote_address": "20.190.146.37:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56443",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56391",
+      "remote_address": "72.153.5.63:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.17.1:137",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::c008:9dc9:468d:18f7:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56504",
+      "remote_address": "49.44.130.18:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "192.168.17.1:139",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56378",
+      "remote_address": "13.107.9.156:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:61897",
+      "remote_address": "64:ff9b::9765:c284:443",
+      "status": "ESTABLISHED",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.37.2:55359",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.56.1:138",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:59781",
+      "remote_address": "2606:4700:8d71:d8b7:9ad7:ae5:ccf5:ac50:443",
+      "status": "ESTABLISHED",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.0.0.1:137",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56384",
+      "remote_address": "92.223.116.197:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.37.2:137",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:53840",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 2308,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56410",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:5040",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 12136,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::49664",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1548,
+      "process_name": "lsass.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56414",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56451",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:60025",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::708b:7c0b:1b66:df04:55347",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:49700",
+      "remote_address": "94.26.38.39:2024",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56505",
+      "remote_address": "69.197.188.194:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56354",
+      "remote_address": "104.85.148.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56485",
+      "remote_address": "142.250.29.138:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56307",
+      "remote_address": "104.85.148.121:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56373",
+      "remote_address": "157.173.105.118:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "127.0.0.1:61208",
+      "remote_address": "127.0.0.1:61207",
+      "status": "ESTABLISHED",
+      "pid": 6596,
+      "process_name": "vmware-authd.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::49665",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1372,
+      "process_name": "wininit.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.235.1:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:5353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56393",
+      "remote_address": "104.85.148.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56418",
+      "remote_address": "40.79.141.156:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56364",
+      "remote_address": "52.98.57.130:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56419",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::7070",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 5536,
+      "process_name": "AnyDesk.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::49666",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1576,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "::1:61209",
+      "remote_address": "::1:61210",
+      "status": "ESTABLISHED",
+      "pid": 20336,
+      "process_name": "vmware.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:56381",
+      "remote_address": "64:ff9b::d6b:d5d:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56200",
+      "remote_address": "69.197.188.194:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::47546",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 5056,
+      "process_name": "spoolsv.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::fac2:68c8:8c22:d696:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:49665",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1372,
+      "process_name": "wininit.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.44.128.55:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.0.0.1:55452",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56487",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:49671",
+      "remote_address": "94.26.38.30:2024",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::c008:9dc9:468d:18f7:55340",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56492",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56431",
+      "remote_address": "49.44.130.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56424",
+      "remote_address": "40.79.141.156:443",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::49667",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 3144,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:57764",
+      "remote_address": "2404:6800:4013:813::54:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:445",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56446",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56507",
+      "remote_address": "144.172.119.7:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:54382",
+      "remote_address": "4.213.25.240:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "::1:55353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::fac2:68c8:8c22:d696:55349",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56497",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56434",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56472",
+      "remote_address": "13.107.213.48:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.56.1:137",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.0.0.1:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:5353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6924,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56482",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56315",
+      "remote_address": "104.85.148.121:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::49668",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 5056,
+      "process_name": "spoolsv.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "127.0.0.1:50253",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 5688,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56356",
+      "remote_address": "172.198.95.192:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.56.1:55355",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56422",
+      "remote_address": "40.79.141.156:443",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56330",
+      "remote_address": "104.85.148.121:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "127.0.0.1:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.235.1:55362",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:60023",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56435",
+      "remote_address": "184.86.248.210:443",
+      "status": "CLOSE_WAIT",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:5355",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 2308,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "::1:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "127.0.0.1:2015",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 6512,
+      "process_name": "expressvpnd.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56506",
+      "remote_address": "69.197.188.194:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56367",
+      "remote_address": "168.119.147.146:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::4500",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 5636,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::5355",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 2308,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56383",
+      "remote_address": "92.223.116.197:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.235.1:137",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56349",
+      "remote_address": "167.82.58.172:80",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:49418",
+      "remote_address": "2603:1040:a06:6::1:443",
+      "status": "ESTABLISHED",
+      "pid": 6256,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56496",
+      "remote_address": "104.85.140.165:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56363",
+      "remote_address": "172.198.95.192:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.235.1:138",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:50777",
+      "remote_address": "51.8.64.151:443",
+      "status": "CLOSE_WAIT",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56412",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:54637",
+      "remote_address": "64:ff9b::8c52:7119:443",
+      "status": "ESTABLISHED",
+      "pid": 17388,
+      "process_name": "GitHubDesktop.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::228c:44d6:9b29:2e7d:55352",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56388",
+      "remote_address": "192.178.158.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56409",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::5353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 2308,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "192.168.235.1:139",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56361",
+      "remote_address": "13.107.246.48:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56406",
+      "remote_address": "192.178.158.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56438",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56402",
+      "remote_address": "172.198.95.192:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56426",
+      "remote_address": "49.44.130.18:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56473",
+      "remote_address": "13.107.213.48:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56457",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "127.0.0.1:57630",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 2200,
+      "process_name": "Code.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56461",
+      "remote_address": "49.44.50.18:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::135",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1820,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:500",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 5636,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::228c:44d6:9b29:2e7d:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:58956",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:49664",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1548,
+      "process_name": "lsass.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56458",
+      "remote_address": "104.85.140.165:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "127.0.0.1:55713",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56352",
+      "remote_address": "69.197.188.194:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56467",
+      "remote_address": "192.178.211.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56483",
+      "remote_address": "51.132.193.106:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:49666",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1576,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.17.1:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:47546",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 5056,
+      "process_name": "spoolsv.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::53840",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 2308,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:50996",
+      "remote_address": "148.113.9.56:443",
+      "status": "ESTABLISHED",
+      "pid": 5536,
+      "process_name": "AnyDesk.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56499",
+      "remote_address": "192.178.211.188:5228",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56441",
+      "remote_address": "192.178.158.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56488",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56502",
+      "remote_address": "20.190.145.160:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56453",
+      "remote_address": "49.44.50.18:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56263",
+      "remote_address": "49.44.194.160:443",
+      "status": "CLOSE_WAIT",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:49669",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1516,
+      "process_name": "services.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56439",
+      "remote_address": "69.197.188.194:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56462",
+      "remote_address": "49.44.118.92:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56489",
+      "remote_address": "192.178.211.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56343",
+      "remote_address": "104.85.140.165:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56495",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56509",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.17.1:138",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::58956",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:139",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56302",
+      "remote_address": "104.85.140.165:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:56641",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56474",
+      "remote_address": "13.107.213.48:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56396",
+      "remote_address": "104.85.148.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "192.168.37.2:139",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.0.0.1:139",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56500",
+      "remote_address": "192.178.211.188:5228",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56318",
+      "remote_address": "4.207.44.66:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.44.128.55:138",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56355",
+      "remote_address": "104.85.148.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56372",
+      "remote_address": "40.104.66.210:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:7070",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 5536,
+      "process_name": "AnyDesk.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": ":::49669",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1516,
+      "process_name": "services.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": "fe80::9667:a0af:efd4:d1e:1900",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "::1:61210",
+      "remote_address": "::1:61209",
+      "status": "ESTABLISHED",
+      "pid": 20336,
+      "process_name": "vmware.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:4500",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 5636,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56471",
+      "remote_address": "13.107.213.48:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56423",
+      "remote_address": "40.79.141.156:443",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:50001",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 5536,
+      "process_name": "AnyDesk.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.44.128.55:137",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "192.168.56.1:139",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56454",
+      "remote_address": "49.44.118.92:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56447",
+      "remote_address": "40.126.17.132:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:54909",
+      "remote_address": "2606:4700:8d72:7cbc:c2d7:ae5:5ff2:75c4:443",
+      "status": "ESTABLISHED",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:49667",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 3144,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56436",
+      "remote_address": "20.190.145.141:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56403",
+      "remote_address": "172.217.113.4:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56387",
+      "remote_address": "104.18.18.203:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56415",
+      "remote_address": "72.154.7.114:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56460",
+      "remote_address": "167.82.58.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56350",
+      "remote_address": "104.85.148.121:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "127.0.0.1:53264",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 17480,
+      "process_name": "GitHubDesktop.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "10.0.0.1:138",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 4,
+      "process_name": "System"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:54421",
+      "remote_address": "74.162.106.40:443",
+      "status": "CLOSE_WAIT",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56445",
+      "remote_address": "167.82.62.172:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56371",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "1",
+      "local_address": "2409:40c1:3144:cb70:194:aed8:7ae2:2bb2:50381",
+      "remote_address": "64:ff9b::496:df72:443",
+      "status": "ESTABLISHED",
+      "pid": 23356,
+      "process_name": "Code.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56400",
+      "remote_address": "157.173.105.118:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56470",
+      "remote_address": "94.26.38.39:2024",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "127.0.0.1:61207",
+      "remote_address": "127.0.0.1:61208",
+      "status": "ESTABLISHED",
+      "pid": 6596,
+      "process_name": "vmware-authd.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:5353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 2308,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56425",
+      "remote_address": "49.44.130.18:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "0.0.0.0:60026",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56428",
+      "remote_address": "49.44.130.18:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56370",
+      "remote_address": "72.154.7.97:443",
+      "status": "ESTABLISHED",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56420",
+      "remote_address": "40.79.141.156:443",
+      "status": "FIN_WAIT2",
+      "pid": 6192,
+      "process_name": "vmnat.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56376",
+      "remote_address": "204.79.197.203:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56411",
+      "remote_address": "150.171.27.12:443",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "23",
+      "type": "2",
+      "local_address": ":::5353",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 21640,
+      "process_name": "chrome.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "2",
+      "local_address": "192.168.17.1:55360",
+      "remote_address": null,
+      "status": "NONE",
+      "pid": 8476,
+      "process_name": "svchost.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "10.44.128.55:56408",
+      "remote_address": "172.198.95.192:80",
+      "status": "TIME_WAIT",
+      "pid": 0,
+      "process_name": "System Idle Process"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:912",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 6596,
+      "process_name": "vmware-authd.exe"
+    },
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "local_address": "0.0.0.0:135",
+      "remote_address": null,
+      "status": "LISTEN",
+      "pid": 1820,
+      "process_name": "svchost.exe"
+    }
+  ]
+}
