@@ -1,21 +1,3 @@
-"""
-Sudarshan EDR - endpoint agent.
-
-Run this ONLY on a machine you own or are explicitly authorized to monitor
-(your own lab VM, your own spare laptop, etc). See edr/config.py for why.
-
-    export SUDARSHAN_ENROLL_TOKEN="the-same-token-the-server-uses"
-    python3 -m edr.agent --server http://192.168.1.50:8443 --once
-    python3 -m edr.agent --server http://192.168.1.50:8443            # loop forever
-
-The agent prints what it's doing to the console every cycle - it is not
-hidden and does not try to disguise itself as another process. It reuses
-the exact collector modules the local Sudarshan CLI already uses
-(Scripts/collectors/*.py); this script just runs them on an interval and
-ships the resulting JSON to the server instead of only building a local
-PDF.
-"""
-
 import argparse
 import json
 import os
@@ -31,28 +13,22 @@ import threading
 import requests
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from config import ENROLL_TOKEN, DEFAULT_SERVER_URL, DEFAULT_INTERVAL_SECONDS, COLLECTOR_FILES  # noqa: E402
-import agent_status  # noqa: E402
+from config import ENROLL_TOKEN, DEFAULT_SERVER_URL, DEFAULT_INTERVAL_SECONDS, COLLECTOR_FILES  
+import agent_status  
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from Scripts.common import detect_os  # noqa: E402
+from Scripts.common import detect_os  
 
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "deploy"))
 try:
-    from edr_self_protect_windows import protect_current_process  # noqa: E402
+    from edr_self_protect_windows import protect_current_process 
 except ImportError:
-    def protect_current_process():  # non-Windows release, or deploy/ missing
+    def protect_current_process():  
         return False
 
 AGENT_ID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".agent_id")
-
-# Evidence is collection-only on the endpoint: each cycle's JSON files are
-# written into a throwaway temp folder, uploaded to the server, and then
-# deleted - nothing is kept in a persistent "Evidences" folder on the
-# agent's own machine. The server is the only place evidence is retained
-# (edr/server_data/agents/<agent_id>/cycles/...).
 
 
 def load_or_create_agent_id():
@@ -117,11 +93,6 @@ def upload_artifact(server_url, agent_id, artifact_type, filename, evidence_dir)
 def run_cycle(server_url, agent_id):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting collection cycle for agent {agent_id}")
     agent_status.write_status(agent_id=agent_id, server=server_url, state="collecting")
-
-    # Each collector writes into a relative "Evidences" folder, so give it
-    # a fresh throwaway directory to run in - this is deleted at the end of
-    # the cycle regardless of success/failure, so no evidence JSON is left
-    # sitting on the endpoint's disk after it's been uploaded to the server.
     cycle_workdir = tempfile.mkdtemp(prefix="sudarshan_edr_cycle_")
     evidence_dir = os.path.join(cycle_workdir, "Evidences")
     prev_cwd = os.getcwd()
@@ -171,7 +142,7 @@ class AgentController:
         self.terminate = False
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
-        self.ready = threading.Event()  # set once the FIRST real heartbeat reply is in
+        self.ready = threading.Event()  
         self.thread = None
 
     def start(self):
@@ -179,10 +150,7 @@ class AgentController:
         self.thread.start()
 
     def wait_until_ready(self, timeout=15):
-        """Block until the first real heartbeat reply has come back (or
-        timeout), so the main loop acts on the server's actual current
-        running/terminate state instead of guessing from constructor
-        defaults for the first few seconds after every restart."""
+
         return self.ready.wait(timeout)
 
     def _heartbeat_loop(self):
@@ -210,12 +178,8 @@ class AgentController:
                 print(f"  ! heartbeat failed: {e}")
 
             if self.terminate:
-                # No point continuing to heartbeat once the dashboard has
-                # told this endpoint to shut down - the server already
-                # recorded the terminate confirmation on that last call.
                 return
 
-            # Short heartbeat period makes dashboard Online/Offline detection responsive.
             self.stop_event.wait(5)
 
     def snapshot(self):
@@ -239,13 +203,7 @@ def main():
     print(f"Reporting to server: {args.server}")
     print("This agent is running openly in this terminal/session - it is not hidden.\n")
 
-    # Best-effort, no-admin-required tamper resistance: lock this
-    # process's own DACL so a standard user's Task Manager "End Task" /
-    # `taskkill` fails with Access is denied, while an actually elevated
-    # admin session can still stop it. See deploy/edr_self_protect_windows.py
-    # for exactly how and why this doesn't need admin rights to apply,
-    # even though it results in admin-only termination. No-op on non-Windows
-    # and on --once single-shot runs (nothing persistent to protect there).
+
     if not args.once:
         protect_current_process()
 
@@ -265,10 +223,7 @@ def main():
     controller.interval = max(10, args.interval)
     controller.start()
 
-    # Wait for the FIRST real heartbeat reply before deciding whether to
-    # collect, stay stopped, or terminate - avoids acting on the
-    # constructor's guessed defaults for the first few seconds after
-    # every restart (see AgentController.__init__ / wait_until_ready).
+ 
     if not controller.wait_until_ready(timeout=15):
         print("  ! no heartbeat reply yet - proceeding with defaults; will pick up the real state shortly.")
 
@@ -301,7 +256,7 @@ def main():
 
             run_cycle(args.server, agent_id)
 
-            # Wait in short increments so Start/Stop/Terminate and interval changes take effect quickly.
+  
             waited = 0
             while waited < interval:
                 time.sleep(1)

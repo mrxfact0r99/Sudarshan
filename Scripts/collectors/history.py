@@ -143,7 +143,6 @@ def carve_deleted_urls_with_wal(db_path, known_urls, max_results=300):
 
 
 def _windows_profile_roots():
-    """Return Windows user profile roots, prioritizing the account running the agent."""
     roots = []
     for value in (
         os.environ.get("USERPROFILE"),
@@ -152,9 +151,7 @@ def _windows_profile_roots():
         if value and os.path.isdir(value):
             roots.append(os.path.normpath(value))
 
-    # An EDR agent can run as a service account (e.g. SYSTEM), in which case
-    # expanduser("~") points at the service profile rather than the logged-in
-    # user's browser profile. Enumerate normal local user profiles as a fallback.
+
     users_root = os.environ.get("SystemDrive", "C:") + os.sep + "Users"
     try:
         for name in os.listdir(users_root):
@@ -167,7 +164,6 @@ def _windows_profile_roots():
     except OSError:
         pass
 
-    # Preserve order and remove duplicates.
     return list(dict.fromkeys(roots))
 
 
@@ -176,9 +172,7 @@ def get_chromium_paths(os_name):
     candidates = {}
 
     if os_name == "Windows":
-        # Use LOCALAPPDATA when available, but also enumerate normal Windows
-        # user profiles so a service-launched EDR agent can still locate the
-        # interactive user's browser databases.
+
         profile_roots = _windows_profile_roots()
         current_local = os.environ.get("LOCALAPPDATA")
         chromium_rel = {
@@ -230,7 +224,6 @@ def get_chromium_paths(os_name):
             if history_files:
                 candidates[label] = sorted(set(history_files))
 
-    # Deduplicate while preserving discovery order.
     for label in list(candidates):
         candidates[label] = list(dict.fromkeys(candidates[label]))
     return candidates
@@ -296,22 +289,7 @@ _SNAPSHOT_CACHE = {}
 
 
 def _get_or_build_snapshot(db_path):
-    """Build (once) an internally-consistent SQLite snapshot of db_path and
-    cache it for the rest of this collection run, keyed by absolute path.
 
-    Previously every single query (history, search terms, downloads,
-    cookies, the full "all URLs" table used for carving, ...) called
-    read_sqlite_copy() independently, and each call re-ran the full SQLite
-    backup API against the SAME live database file from scratch. For one
-    Chromium profile that meant the History file got fully copied 4 times
-    and the Cookies file twice - on a machine with a large/long-lived
-    browser profile (or several Windows user profiles, since the agent
-    enumerates all of them when run as a service account) this is what
-    makes browsing-history collection look "stuck": it's not hung, it's
-    redoing the same multi-second-to-multi-minute full-database backup
-    over and over. Caching the snapshot cuts that down to one backup per
-    database file for the whole run.
-    """
     key = os.path.abspath(db_path)
     if key in _SNAPSHOT_CACHE:
         return _SNAPSHOT_CACHE[key]
@@ -357,8 +335,7 @@ def _get_or_build_snapshot(db_path):
 
 
 def _cleanup_snapshots():
-    """Remove every cached snapshot's temp folder. Call once at the end of
-    a collection run (main())."""
+
     for tmp_path, _err in _SNAPSHOT_CACHE.values():
         if tmp_path:
             shutil.rmtree(os.path.dirname(tmp_path), ignore_errors=True)
@@ -366,10 +343,7 @@ def _cleanup_snapshots():
 
 
 def read_sqlite_copy(db_path, query, columns):
-    """Read a live browser SQLite DB safely, including WAL state, using a
-    cached snapshot (see _get_or_build_snapshot) so the same database file
-    is only ever backed up once per collection run no matter how many
-    different queries are run against it."""
+
     tmp_path, snap_error = _get_or_build_snapshot(db_path)
     if snap_error:
         return [], snap_error

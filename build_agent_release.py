@@ -1,21 +1,3 @@
-#!/usr/bin/env python3
-"""
-Sudarshan EDR - Agent-only release builder.
-
-Copies ONLY the files an endpoint agent needs into dist/Sudarshan_EDR_Agent/
-and zips it up. None of the server code (edr/server.py, edr/server_gui.py,
-dashboard templates, report generator, or the server's SQLite data) is
-included - so this is what you hand to a machine that should only ever run
-the agent, never see server internals.
-
-Run:
-    python3 build_agent_release.py
-
-Output:
-    dist/Sudarshan_EDR_Agent/           <- folder, ready to run
-    dist/Sudarshan_EDR_Agent.zip        <- same thing, zipped
-"""
-
 import os
 import shutil
 import zipfile
@@ -23,10 +5,7 @@ import zipfile
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(ROOT, "dist", "Sudarshan_EDR_Agent")
 
-# Every path here is relative to the project root. Files not listed
-# (edr/server.py, edr/server_gui.py, edr/templates/, edr/server_data/,
-# Scripts/report/, main.py, main_gui.py, edr_server_gui.py, start_server.py,
-# .git/, README.md) are intentionally left out of the agent release.
+
 AGENT_FILES = [
     "edr/__init__.py",
     "edr/agent.py",
@@ -46,13 +25,6 @@ AGENT_FILES = [
     "Scripts/collectors/clipboard.py",
     "Scripts/collectors/commands.py",
     "Scripts/collectors/execution.py",
-    # deploy/install_agent.py --mode user (default): no admin/root needed
-    # to install at all - protects the folder from deletion and the
-    # running agent process from End Task using deploy/edr_self_protect_windows.py.
-    # deploy/install_agent.py --mode service: real OS-enforced "only
-    # admin/root can end task" - installs as a Windows Service
-    # (LocalSystem, elevated install) or systemd unit (root, sudo
-    # install). See each file's own docstring.
     "deploy/install_agent.py",
     "deploy/install_windows.py",
     "deploy/install_linux.py",
@@ -62,9 +34,7 @@ AGENT_FILES = [
     "deploy/edr-agent.service",
 ]
 
-# pywin32 is only needed for the Windows-service install path; the
-# environment marker keeps `pip install -r requirements.txt` working
-# unchanged on Linux.
+
 AGENT_REQUIREMENTS = "psutil>=5.9\nrequests>=2.31\npywin32>=306; platform_system=='Windows'\n"
 
 AGENT_README = """\
@@ -77,14 +47,14 @@ explicitly authorized to monitor (see edr/config.py). This folder can be
 extracted and installed entirely as a normal (non-admin) user - see below.
 
 Setup:
-    pip install -r requirements.txt
+    pip3 install -r requirements.txt
 
 RECOMMENDED - one command, always the strongest available protection,
 no flags/choices to make:
 
     Windows (elevated / "Run as administrator" prompt - required,
     creating any Windows Service needs it):
-        python deploy\\install_windows.py --server http://SERVER_IP:8443 --token THE_TOKEN
+        python3 deploy\\install_windows.py --server http://SERVER_IP:8443 --token THE_TOKEN
 
     Linux (sudo - required):
         sudo python3 deploy/install_linux.py --server http://SERVER_IP:8443 --token THE_TOKEN
@@ -101,27 +71,6 @@ Each of these does everything in one shot:
     (gated by the dashboard login, separate from OS-level protection).
   - Every completed collection cycle auto-generates a PDF report on
     the server.
-
-ALTERNATIVE - Windows only, no admin needed to INSTALL (only to later
-stop it or delete the folder):
-    python deploy\\install_agent.py --mode user --server http://SERVER_IP:8443 --token THE_TOKEN
-See deploy/edr_self_protect_windows.py for exactly how that works.
-
-See the agent's status any time (no admin/root needed):
-    python edr_agent_gui.py
-This opens a plain, read-only window - agent id, connection state,
-whether collection is on/off, last cycle result. Close it normally with
-the window's [X] whenever you like; it only reads a status file, so
-closing it does NOT stop the background agent. Reopen it any time to
-check again.
-
-Quick manual test instead (no protection, no install - just for checking
-the agent talks to the server before installing it for real; needs the
-token as an env var since deploy/install_agent.py hasn't written
-edr/instance_config.json yet at this point):
-    export SUDARSHAN_ENROLL_TOKEN="the-token-the-server-owner-gave-you"
-    (Windows: set SUDARSHAN_ENROLL_TOKEN=the-token-the-server-owner-gave-you)
-    python3 -m edr.agent --server http://SERVER_IP:8443 --once
 """
 
 

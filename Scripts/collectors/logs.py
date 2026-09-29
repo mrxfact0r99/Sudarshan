@@ -28,19 +28,9 @@ def collect_windows_logs(max_events=MAX_EVENTS):
     for log_name in log_names:
         tmp_path = None
         try:
-            # Event messages (Message field) routinely contain non-ASCII
-            # characters and embedded newlines. Capturing PowerShell's
-            # stdout through subprocess relies on the console's active
-            # codepage, which on many Windows machines is NOT UTF-8 - that
-            # silently mangles/truncates the JSON and made log collection
-            # unreliable even though the command "succeeded". To avoid
-            # that entirely, make PowerShell write the JSON straight to a
-            # UTF-8 file on disk, and read that file back ourselves
-            # instead of trusting the piped console output.
             fd, tmp_path = tempfile.mkstemp(suffix=".json")
             os.close(fd)
-            tmp_path_ps = tmp_path.replace("'", "''")  # escape for PS single-quoted string
-
+            tmp_path_ps = tmp_path.replace("'", "''") 
             ps_cmd = [
                 "powershell",
                 "-NoProfile",
@@ -66,8 +56,7 @@ def collect_windows_logs(max_events=MAX_EVENTS):
                 }
                 continue
 
-            # Windows PowerShell's "utf8" encoding writes a BOM - utf-8-sig
-            # strips it if present and behaves like plain utf-8 otherwise.
+
             with open(tmp_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 raw = f.read().strip()
 

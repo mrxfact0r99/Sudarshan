@@ -1,10 +1,3 @@
-"""
-Sudarshan EDR - Server GUI.
-
-Run with:
-    python3 edr_server_gui.py
-"""
-
 import os
 import sys
 import socket
@@ -17,11 +10,10 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from werkzeug.serving import make_server  # noqa: E402
-import config as edr_config               # noqa: E402
-import server as server_mod               # noqa: E402
+from werkzeug.serving import make_server  
+import config as edr_config              
+import server as server_mod               
 
-# ── Colors ────────────────────────────────────────────────────────
 BG     = "#0b0d12"
 PANEL  = "#13161e"
 PANEL2 = "#1a1e2a"
@@ -45,7 +37,6 @@ def get_local_ip():
         return "127.0.0.1"
 
 
-# ── Flask server thread ───────────────────────────────────────────
 class ServerThread(threading.Thread):
     def __init__(self, app, host, port):
         super().__init__(daemon=True)
@@ -60,7 +51,6 @@ class ServerThread(threading.Thread):
         self.srv.shutdown()
 
 
-# ── Main GUI ──────────────────────────────────────────────────────
 class ServerGUI:
     def __init__(self, root):
         self.root          = root
@@ -77,7 +67,6 @@ class ServerGUI:
         self._build_form()
         self._build_log()
 
-    # ── Header ────────────────────────────────────────────────────
     def _build_header(self):
         hdr = tk.Frame(self.root, bg=PANEL, height=50)
         hdr.pack(fill="x")
@@ -94,19 +83,16 @@ class ServerGUI:
         )
         self.status_label.pack(side="right", padx=16)
 
-    # ── Config form ───────────────────────────────────────────────
     def _build_form(self):
         form = tk.Frame(self.root, bg=BG, padx=16, pady=12)
         form.pack(fill="x")
 
-        # Row 1: note
         tk.Label(
             form,
             text="Only enroll endpoints you own or are explicitly authorized to monitor.",
             bg=BG, fg=MUTED, font=("Segoe UI", 9)
         ).grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 10))
 
-        # Row 2: token + port
         tk.Label(form, text="Enroll token:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).grid(row=1, column=0, sticky="w")
 
@@ -136,7 +122,6 @@ class ServerGUI:
             relief="flat", font=("Consolas", 10)
         ).grid(row=1, column=4, sticky="w", padx=8)
 
-        # Row 2b: dashboard password
         tk.Label(form, text="Dashboard pass:", bg=BG, fg=FG,
                  font=("Segoe UI", 10)).grid(row=2, column=0, sticky="w", pady=(8, 0))
 
@@ -148,7 +133,6 @@ class ServerGUI:
         )
         self.dash_pass_entry.grid(row=2, column=1, sticky="w", padx=(8, 16), pady=(8, 0))
 
-        # Row 3: buttons
         btn_row = tk.Frame(form, bg=BG)
         btn_row.grid(row=3, column=0, columnspan=5, sticky="w", pady=(10, 0))
 
@@ -175,9 +159,7 @@ class ServerGUI:
 
 
 
-    # ── Log panel ─────────────────────────────────────────────────
     def _build_log(self):
-        # Label bar
         bar = tk.Frame(self.root, bg=PANEL2, height=28)
         bar.pack(fill="x")
         bar.pack_propagate(False)
@@ -193,7 +175,6 @@ class ServerGUI:
         )
         clr_btn.pack(side="right", padx=6)
 
-        # Text widget — tag colours
         self.log_box = scrolledtext.ScrolledText(
             self.root,
             bg=BG, fg=FG, insertbackground=FG,
@@ -202,7 +183,6 @@ class ServerGUI:
         )
         self.log_box.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # Colour tags for log lines
         self.log_box.tag_config("enroll",   foreground=GREEN)
         self.log_box.tag_config("artifact", foreground=BLUE)
         self.log_box.tag_config("checkin",  foreground=MUTED)
@@ -222,7 +202,6 @@ class ServerGUI:
         return "info"
 
     def _log(self, text, tag=None):
-        """Append text to log box — MUST be called from the main thread."""
         self.log_box.configure(state="normal")
         self.log_box.insert("end", text + ("\n" if not text.endswith("\n") else ""),
                             tag or self._tag_for_line(text))
@@ -234,21 +213,17 @@ class ServerGUI:
         self.log_box.delete("1.0", "end")
         self.log_box.configure(state="disabled")
 
-    # ── Queue polling (thread-safe bridge) ───────────────────────
     def _poll_log_queue(self):
-        """Drain the shared queue from server.py and display in GUI.
-        Called every 250 ms via root.after — always runs on the main thread."""
+
         try:
             while True:
                 line = server_mod._log_queue.get_nowait()
                 self._log(line)
         except Exception:
-            pass  # queue.Empty is normal
-        # reschedule only while server is running
+            pass  
         if self.server_thread is not None:
             self._poll_id = self.root.after(250, self._poll_log_queue)
 
-    # ── Server control ────────────────────────────────────────────
     def start_server(self):
         token = self.token_var.get().strip()
         if not token:
@@ -262,8 +237,7 @@ class ServerGUI:
 
         dash_pass = self.dash_pass_var.get().strip() or edr_config.DASHBOARD_PASSWORD
 
-        # Inject token + dashboard password into server module so
-        # require_token()/login() see the values set in this form
+
         edr_config.ENROLL_TOKEN       = token
         server_mod.ENROLL_TOKEN       = token
         edr_config.DASHBOARD_PASSWORD = dash_pass
@@ -295,17 +269,14 @@ class ServerGUI:
         self._log(f"  python3 -m edr.agent --server http://{local_ip}:{port}", "info")
         self._log("Waiting for agents...\n", "info")
 
-        # Start polling the queue for live Flask logs
         self._poll_log_queue()
 
     def open_dashboard(self):
         if self.port:
             webbrowser.open(f"http://127.0.0.1:{self.port}")
 
-    # ── Token visibility + safe copy ────────────────────────────────
     @staticmethod
     def _mask_token(token):
-        """Never show the full token in the log — only first/last char."""
         if len(token) <= 2:
             return "*" * len(token)
         return token[0] + "*" * (len(token) - 2) + token[-1]
@@ -317,7 +288,6 @@ class ServerGUI:
 
 
     def stop_server(self):
-        # Cancel polling first
         if self._poll_id is not None:
             self.root.after_cancel(self._poll_id)
             self._poll_id = None

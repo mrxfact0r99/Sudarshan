@@ -1,14 +1,3 @@
-"""
-Sudarshan EDR - central server.
-
-Run with:
-    export SUDARSHAN_ENROLL_TOKEN="pick-a-real-secret"
-    python3 -m edr.server
-
-Or use the easy startup script:
-    python3 start_server.py
-"""
-
 import functools
 import io
 import json
@@ -43,13 +32,6 @@ app.secret_key = SECRET_KEY or secrets.token_hex(32)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
-# --------------------------------------------------------------------------
-# Timestamps are always STORED in UTC (see now_iso()) so the DB and any
-# machine-to-machine comparisons never get confused about offsets. They are
-# only converted to IST at DISPLAY time, in the dashboard templates, via the
-# `to_ist` Jinja filter below. This is what drives the "agent connected at
-# <time>" and "agent last seen at <time>" text on the dashboard.
-# --------------------------------------------------------------------------
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -64,17 +46,13 @@ def to_ist(value, fmt="%d %b %Y, %I:%M:%S %p IST"):
     except ValueError:
         return value
     if dt.tzinfo is None:
-        # Older rows / any legacy naive timestamps are assumed UTC, since
-        # that's what now_iso() has always produced.
+  
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(IST).strftime(fmt)
 
 
 app.jinja_env.filters["to_ist"] = to_ist
 
-# --------------------------------------------------------------------------
-# Thread-safe log queue — server_gui.py polls this to update its widget
-# --------------------------------------------------------------------------
 _log_queue = _queue.Queue()
 
 
@@ -88,26 +66,6 @@ def server_log(msg):
     except Exception:
         pass
 
-
-# --------------------------------------------------------------------------
-# Storage
-#
-# Every agent gets its own folder under DATA_DIR/agents/<agent_id>/.
-# Each collection cycle (one full pass of all collectors, run by the agent
-# on its interval) gets its OWN numbered sub-folder under that, so nothing
-# from an earlier cycle is ever overwritten:
-#
-#   agents/<agent_id>/cycles/cycle_0001/Evidences/*.json
-#   agents/<agent_id>/cycles/cycle_0001/Report/*.pdf
-#   agents/<agent_id>/cycles/cycle_0002/Evidences/*.json
-#   agents/<agent_id>/cycles/cycle_0002/Report/*.pdf
-#   ...
-#
-# A report is generated automatically for a cycle as soon as that cycle
-# finishes (the agent's checkin at the end of run_cycle() signals "done").
-# The dashboard's "Generate Report" button just lets you re-run/regenerate
-# the report for a given cycle on demand - it never deletes another cycle.
-# --------------------------------------------------------------------------
 
 def get_db():
     if "db" not in g:
@@ -145,7 +103,6 @@ def init_db():
         )
         """
     )
-    # Lightweight schema migration for databases created by older versions.
     existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(agents)").fetchall()}
     migrations = {
         "desired_running": "ALTER TABLE agents ADD COLUMN desired_running INTEGER NOT NULL DEFAULT 1",
@@ -159,8 +116,6 @@ def init_db():
         if col not in existing_cols:
             conn.execute(sql)
 
-    # NOTE: cycle is part of the primary key so every cycle's artifacts are
-    # kept as their own row instead of overwriting the previous cycle's row.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS artifacts (
@@ -202,29 +157,20 @@ def now_iso():
 
 
 def known_cycles(db, agent_id):
-    """All cycle numbers that have at least one uploaded artifact, newest first."""
     rows = db.execute(
         "SELECT DISTINCT cycle FROM artifacts WHERE agent_id=? ORDER BY cycle DESC", (agent_id,)
     ).fetchall()
     return [int(r["cycle"]) for r in rows]
 
 
-# --------------------------------------------------------------------------
-# Report generation (shared by the automatic trigger and the manual button)
-# --------------------------------------------------------------------------
-
 def generate_report_for_cycle(agent_id, cycle, hostname=""):
-    """Runs Scripts.report.report against ONE cycle's Evidences folder and
-    writes the PDFs into that SAME cycle's Report folder. Never touches any
-    other cycle's data."""
     workspace = cycle_dir(agent_id, cycle)
     evid_dir = os.path.join(workspace, "Evidences")
     if not os.path.isdir(evid_dir) or not os.listdir(evid_dir):
         return False, "No evidence uploaded for this cycle yet.", []
 
     report_dir = os.path.join(workspace, "Report")
-    # Safe to clear: this regenerates ONLY this cycle's own report, it does
-    # not touch earlier or later cycles' folders.
+
     if os.path.isdir(report_dir):
         shutil.rmtree(report_dir, ignore_errors=True)
 
@@ -258,17 +204,13 @@ def generate_report_for_cycle(agent_id, cycle, hostname=""):
 
 
 def _generate_report_background(agent_id, cycle, hostname):
-    """Runs report generation on a background thread so the agent's checkin
-    request (which signals a cycle just finished) doesn't have to wait on it."""
+
     try:
         generate_report_for_cycle(agent_id, cycle, hostname)
     except Exception as e:
         server_log(f"[REPORT] background generation error for {hostname!r} cycle {cycle}: {e}")
 
 
-# --------------------------------------------------------------------------
-# Auth helper
-# --------------------------------------------------------------------------
 
 def require_token():
     token = request.headers.get("X-Agent-Token", "")
@@ -277,8 +219,6 @@ def require_token():
 
 
 def login_required(view):
-    """Guards human-facing dashboard routes. Agent API routes are NOT
-    wrapped with this - they authenticate separately via require_token()."""
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
@@ -313,10 +253,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-# --------------------------------------------------------------------------
-# Agent-facing API
-# --------------------------------------------------------------------------
-
 @app.route("/api/enroll", methods=["POST"])
 def enroll():
     require_token()
@@ -331,16 +267,7 @@ def enroll():
     ts  = now_iso()
 
     if row:
-        # A fresh process start (even reusing the same persisted agent_id
-        # from edr/.agent_id) is always a clean slate: clear any leftover
-        # terminate_requested/terminated_at from a PREVIOUS dashboard
-        # Terminate click, and restore desired_running=1. Without this,
-        # terminate_requested is set once and NEVER cleared anywhere else,
-        # so re-running the agent after a past Terminate would enroll fine,
-        # run exactly one collection cycle, and then immediately see the
-        # still-set terminate flag on its next heartbeat and shut itself
-        # down again - looking like "runs once then goes offline" even
-        # though nobody pressed Terminate this time.
+
         db.execute(
             "UPDATE agents SET hostname=?, os_name=?, last_seen=?, "
             "terminate_requested=0, terminated_at=NULL, desired_running=1 "
@@ -363,11 +290,6 @@ def enroll():
 
 @app.route("/api/checkin/<agent_id>", methods=["POST"])
 def checkin(agent_id):
-    """The agent calls this once at the END of a full collection cycle
-    (after uploading every artifact type). That makes checkin the natural
-    signal that a cycle is complete: we auto-generate that cycle's report
-    in the background, then roll the agent over to a fresh cycle number so
-    the NEXT cycle's uploads land in their own new sub-folder."""
     require_token()
     db  = get_db()
     row = db.execute("SELECT hostname, current_cycle FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
@@ -385,8 +307,7 @@ def checkin(agent_id):
     server_log(f"[CHECKIN] host={hostname!r}  ip={request.remote_addr}  "
                f"cycle {finished_cycle} complete  id={agent_id[:8]}...")
 
-    # Auto-generate the report for the cycle that just finished, without
-    # blocking the agent's HTTP request.
+
     evid_dir = cycle_evidence_dir(agent_id, finished_cycle)
     if os.path.isdir(evid_dir) and os.listdir(evid_dir):
         threading.Thread(
@@ -400,7 +321,6 @@ def checkin(agent_id):
 
 @app.route("/api/heartbeat/<agent_id>", methods=["POST"])
 def heartbeat(agent_id):
-    """Heartbeat endpoint. Also returns dashboard-controlled agent settings."""
     require_token()
     db = get_db()
     row = db.execute(
@@ -414,10 +334,7 @@ def heartbeat(agent_id):
     ts = now_iso()
     terminate = bool(row["terminate_requested"])
     if terminate:
-        # Record that the endpoint has been told to shut down. We don't
-        # delete the agent row here - the agent still has to actually
-        # exit and confirm; the dashboard shows "Terminating..." until
-        # last_seen stops advancing (agent goes Offline for good).
+
         db.execute(
             "UPDATE agents SET last_seen=?, terminated_at=? WHERE agent_id=?",
             (ts, ts, agent_id),
@@ -438,9 +355,6 @@ def heartbeat(agent_id):
 @app.route("/api/control/<agent_id>", methods=["POST"])
 @login_required
 def control_agent(agent_id):
-    """Dashboard control for telemetry collection. No arbitrary endpoint commands.
-    Called from the browser (dashboard JS), so it's gated by the dashboard
-    login session rather than the agent's X-Agent-Token."""
     db = get_db()
     row = db.execute("SELECT * FROM agents WHERE agent_id=?", (agent_id,)).fetchone()
     if not row:
@@ -461,9 +375,6 @@ def control_agent(agent_id):
         updates.append("desired_running=?")
         values.append(0)
     elif action == "terminate":
-        # Fully shuts the endpoint agent process down (not just "stop
-        # collecting"). Irreversible from this side - the agent has to be
-        # started again by hand on the endpoint if you want it back.
         updates.append("terminate_requested=?")
         values.append(1)
         updates.append("desired_running=?")
@@ -533,13 +444,9 @@ def upload_artifact(agent_id, artifact_type):
     filename = COLLECTOR_FILES[artifact_type]
     dest_dir = cycle_evidence_dir(agent_id, cycle)
     os.makedirs(dest_dir, exist_ok=True)
-    # Each cycle writes into its OWN Evidences folder, so this never
-    # overwrites a previous cycle's file - only re-uploads within the SAME
-    # still-in-progress cycle overwrite (e.g. a retried upload).
     with open(os.path.join(dest_dir, filename), "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False, default=str)
 
-    # Count records for a meaningful log line
     if isinstance(payload, list):
         n_records = len(payload)
     elif isinstance(payload, dict):
@@ -565,10 +472,6 @@ def upload_artifact(agent_id, artifact_type):
     )
     return jsonify({"status": "stored", "artifact_type": artifact_type, "cycle": cycle})
 
-
-# --------------------------------------------------------------------------
-# Dashboard (human-facing)
-# --------------------------------------------------------------------------
 
 @app.route("/")
 @login_required
@@ -673,10 +576,6 @@ def download_report(agent_id, cycle, filename):
         abort(404)
     return send_file(path, mimetype="application/pdf", as_attachment=False)
 
-
-# --------------------------------------------------------------------------
-# Local IP helper
-# --------------------------------------------------------------------------
 
 def get_local_ip():
     try:

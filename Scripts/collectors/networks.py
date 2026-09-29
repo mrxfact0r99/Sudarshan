@@ -12,7 +12,6 @@ from ..common import EVIDENCE_DIR, detect_os, ensure_evidence_dir
 
 
 def get_process_name(pid):
-    """Look up process name safely for a given PID."""
     if pid is None:
         return None
     try:

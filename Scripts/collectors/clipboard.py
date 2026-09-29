@@ -15,12 +15,7 @@ except ImportError:
 
 
 def save_evidence(payload, os_name):
-    # Write into "./Evidences" (relative to the current working directory),
-    # same convention every other collector uses via Scripts/common.py.
-    # This used to hardcode the project folder's own Evidences directory
-    # regardless of where the collector was actually run from, which is
-    # what left clipboard evidence behind on the agent's disk even when
-    # the agent ran each cycle in its own throwaway working directory.
+    
     evidence_dir = Path("Evidences")
     evidence_dir.mkdir(exist_ok=True)
 

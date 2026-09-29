@@ -1,1 +1,1 @@
-"""Individual evidence collectors (processes, network, USB, logs, etc.)."""
+"""Individual evidence collectors."""

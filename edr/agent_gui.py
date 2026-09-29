@@ -1,27 +1,3 @@
-"""
-Sudarshan EDR - Agent GUI.
-
-A plain window any logged-in user can open to see what the background
-agent is doing right now: agent id, server, connection state, whether
-collection is on/off, and the last cycle result. It reads
-edr/.agent_status.json, which the real background agent updates every
-few seconds.
-
-The actual agent process (installed via deploy/install_agent.py as a
-Windows Service / systemd unit, running as LocalSystem/root) is separate
-from this window. This window is READ-ONLY and has no control over it -
-closing this window with the [X] button, any time, has zero effect on
-the background agent, which keeps running exactly as before. Open it
-again whenever you want to check on it.
-
-To actually stop the agent, you need the EDR dashboard's Stop/Terminate
-controls, or an administrator (Windows) / root (Linux) session on this
-machine - see deploy/install_agent.py.
-
-Run with:
-    python edr_agent_gui.py
-"""
-
 import os
 import sys
 import time
@@ -41,7 +17,7 @@ MUTED = "#9aa0a6"
 GREEN = "#4caf50"
 RED = "#e05252"
 
-HEARTBEAT_STALE_AFTER = 30  # seconds - after this long with no heartbeat, show "not responding"
+HEARTBEAT_STALE_AFTER = 30  
 
 
 def _age(ts):
@@ -65,9 +41,7 @@ class AgentGUI:
         root.geometry("480x420")
         root.configure(bg=BG)
         root.resizable(False, False)
-        # No WM_DELETE_WINDOW override here - this is a plain, freely
-        # closeable window. It only displays status; it does not control
-        # the background agent, so closing it can't stop collection.
+
 
         tk.Label(root, text="Sudarshan EDR Agent", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 15, "bold")).pack(anchor="w", padx=16, pady=(16, 0))
