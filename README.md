@@ -52,7 +52,7 @@ Sudarshan has strong security feture only admin or dashboard user have the power
 > secretly on someone else's device.
 > The creator of this tool is not responsible for any illegal activity committed with it, so please use it legally and take full responsibility for your actions
 
-**1. Create agent files**:
+**1. Create agent files:**:
 ```
 python3 build_agent_release.py
 ```
@@ -64,16 +64,18 @@ cd dist
 Send the zip file to agent pc wich present in same network
 
 
-**2. Start Server**:
+**2. Start Server:**:
 ```
 python3 edr_server_gui.py
 ```
 Enroll the token and start the server then copy the ip address and port number of running server
 
-**3. Start agent in agent device**
+**3. Start agent in agent device according to your OS (Run as Admin):**
  ```
- python3.exe .\deploy\install_agent.py --server http://{ip}:{port} --token {token}
+ python3.exe ./deploy/{Windows}{Linux}_install_agent.py --server http://{ip}:{port} --token {token}
  ```
 
-**4. Open the dashboard and view endpoints and reports from the dashboard in a browser**
+ **4. Now agent running in background close the terminal (User can only heck the agent progress via running agent_gui.py)**
+
+**5. Open the dashboard and view endpoints and reports from the dashboard in a browser**
 
